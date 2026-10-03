@@ -43,10 +43,11 @@
     // Same variable name agent 2 uses. Google retires old models for new accounts (gemini-2.5-flash
     // already answers "no longer available to new users"), so check the current names at
     // https://ai.google.dev/gemini-api/docs/models and change this line if the pipeline reports a 404.
-    "GEMINI_MODEL": "gemini-3.8-flash",
-    // Optional: a different model for the two Georgian stages (translate + Georgian grammar check).
-    // Uncomment and set it to a larger model from the same list if the Georgian reads badly:
-    // "GEMINI_MODEL_KA": "<model name>",
+    "GEMINI_MODEL": "gemini-3.5-flash-lite",
+    // Flash-Lite is Google's cheapest tier: most requests per day and per minute, but the weakest at
+    // Georgian. Optional: a different model for the two Georgian stages (translate + Georgian grammar
+    // check). If the Georgian reads badly, uncomment this to use the larger model for those two only:
+    // "GEMINI_MODEL_KA": "gemini-3.8-flash",
 
     "PIPELINE_MODE": "staged",    // "staged" (Free) or "single" (Paid)
     "FEEDS_PER_RUN": "30",        // sources per collect: 30 -> 25 per collect, all 75 covered every 15 minutes
