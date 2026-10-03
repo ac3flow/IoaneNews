@@ -1,0 +1,145 @@
+@import "tailwindcss";
+@source "../../public/index.html";
+@source "../../public/app.js";
+
+/* Palette from the brief: Emerald #10B981 primary, Warm Gold #F59E0B accent, slate-950 ground. */
+@theme static {
+  --color-brand: #10b981;
+  --color-brand-soft: #34d399;
+  --color-gold: #f59e0b;
+  --color-gold-soft: #fcd34d;
+  --color-ground: #020617;
+  --color-panel: #0b1220;
+  --color-line: #1e293b;
+
+  --font-display: "Bricolage Grotesque", "Noto Sans Georgian", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", "Noto Sans Georgian", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-ground);
+    scroll-padding-top: 7.5rem;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    font-optical-sizing: auto;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 35%, transparent);
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button {
+    cursor: pointer;
+  }
+  /* native pickers: keep the dark UI and a visible icon */
+  input[type="date"],
+  input[type="time"] {
+    color-scheme: dark;
+  }
+}
+
+@layer components {
+  .display {
+    font-family: var(--font-display);
+    font-stretch: 88%;
+    letter-spacing: -0.015em;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  .tab {
+    @apply relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3.5 py-1.5 text-sm font-medium text-slate-400 transition-colors;
+  }
+  .tab:hover {
+    @apply text-slate-100;
+  }
+  .tab[aria-current="true"] {
+    @apply border-emerald-500/40 bg-emerald-500/10 text-emerald-300;
+  }
+  .tab[data-kind="top"][aria-current="true"] {
+    @apply border-amber-500/50 bg-amber-500/10 text-amber-300;
+  }
+
+  .field {
+    @apply h-10 rounded-lg border border-slate-800 bg-slate-900 px-3 font-mono text-sm text-slate-100 transition-colors;
+  }
+  .field:hover {
+    @apply border-slate-700;
+  }
+  .field[data-active="true"] {
+    @apply border-amber-500/60;
+  }
+
+  .btn {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors;
+  }
+  .btn-primary {
+    @apply bg-emerald-500 text-slate-950;
+  }
+  .btn-primary:hover {
+    @apply bg-emerald-400;
+  }
+  .btn-ghost {
+    @apply border border-slate-800 text-slate-300;
+  }
+  .btn-ghost:hover {
+    @apply border-slate-600 text-white;
+  }
+
+  .card {
+    @apply rounded-2xl border border-slate-800/80 bg-slate-900/60 transition-colors;
+  }
+  .card:hover {
+    @apply border-slate-700;
+  }
+
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[0.6875rem] font-medium uppercase tracking-wider;
+  }
+
+  .fade-x[data-fade="right"] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+  }
+  .fade-x[data-fade="left"] {
+    mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+  }
+  .fade-x[data-fade="both"] {
+    mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  .skeleton {
+    background: linear-gradient(100deg, #0f172a 30%, #17233a 50%, #0f172a 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

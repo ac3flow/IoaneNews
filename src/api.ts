@@ -2,7 +2,7 @@ import { TIER_LABEL, tierOf } from './registry/sources';
 import { resolveSource } from './registry/trust';
 import { STAGE_ORDER, runPipeline, type StageName } from './pipeline/run';
 import { parseLinks } from './pipeline/citations';
-import { SLOT_MS, TIMEZONE, dayRangeUtc, formatSlot, isDate, nextSlot, nowIso, parseSlotMinute, slotRangeUtc } from './time';
+import { SLOT_MS, TIMEZONE, dayRangeUtc, formatSlot, isDate, nextSlot, nowIso, parseSlotMinute, slotRangeUtc, tbilisiDate } from './time';
 import { ARTICLE_CATEGORIES, type ArticleRow, type Env } from './types';
 
 // ─── tabs ───────────────────────────────────────────────────────────────────
@@ -135,7 +135,10 @@ export function parseListQuery(sp: URLSearchParams): ListQuery | { error: string
   return q;
 }
 
-export function buildListSql(q: ListQuery): { sql: string; binds: (string | number)[] } {
+/** Tbilisi minute-of-day (0–1439) of published_at. Tbilisi is a fixed UTC+4. */
+const MINUTE_OF_DAY = `(CAST(strftime('%H', published_at, '+4 hours') AS INTEGER) * 60 + CAST(strftime('%M', published_at, '+4 hours') AS INTEGER))`;
+
+function filters(q: Pick<ListQuery, 'tab' | 'date' | 'slot'>): { where: string[]; binds: (string | number)[]; bind: (v: string | number) => string } {
   const where: string[] = [PUBLISHED];
   const binds: (string | number)[] = [];
   const bind = (v: string | number): string => {
@@ -147,7 +150,7 @@ export function buildListSql(q: ListQuery): { sql: string; binds: (string | numb
   const cat = TABS.find((t) => t.id === q.tab && 'category' in t);
   if (cat && 'category' in cat) where.push(`category = ${bind(cat.category)}`);
 
-  // Time filters. published_at is stored as UTC ISO-8601; Tbilisi is a fixed UTC+4.
+  // Time filters. published_at is stored as UTC ISO-8601.
   if (q.date && q.slot !== undefined) {
     const { start, end } = slotRangeUtc(q.date, q.slot);
     where.push(`published_at >= ${bind(start)} AND published_at < ${bind(end)}`);
@@ -155,10 +158,13 @@ export function buildListSql(q: ListQuery): { sql: string; binds: (string | numb
     const { start, end } = dayRangeUtc(q.date);
     where.push(`published_at >= ${bind(start)} AND published_at < ${bind(end)}`);
   } else if (q.slot !== undefined) {
-    const mod = `(CAST(strftime('%H', published_at, '+4 hours') AS INTEGER) * 60 + CAST(strftime('%M', published_at, '+4 hours') AS INTEGER))`;
-    where.push(`${mod} BETWEEN ${bind(q.slot)} AND ${bind(q.slot + SLOT_MS / 60_000 - 1)}`);
+    where.push(`${MINUTE_OF_DAY} BETWEEN ${bind(q.slot)} AND ${bind(q.slot + SLOT_MS / 60_000 - 1)}`);
   }
+  return { where, binds, bind };
+}
 
+export function buildListSql(q: ListQuery): { sql: string; binds: (string | number)[] } {
+  const { where, binds, bind } = filters(q);
   if (q.tab === 'top10') {
     return { sql: `SELECT * FROM articles WHERE ${where.join(' AND ')} ORDER BY trust_score DESC, published_at DESC, id DESC LIMIT 10`, binds };
   }
@@ -210,11 +216,27 @@ async function getArticle(env: Env, id: string): Promise<Response> {
   return json({ article: toDto(row), trust }, 200, 'public, max-age=60');
 }
 
+// ─── GET /api/slots ─────────────────────────────────────────────────────────
+/** Published-story counts per 5-minute Tbilisi slot for one day: powers the UI's time tape. */
+async function slots(env: Env, sp: URLSearchParams): Promise<Response> {
+  const tab = sp.get('tab') ?? 'all';
+  if (!TABS.some((t) => t.id === tab)) return fail(400, `unknown tab "${tab}"`);
+  const date = sp.get('date') ?? tbilisiDate();
+  if (!isDate(date)) return fail(400, 'date must be YYYY-MM-DD (Asia/Tbilisi)');
+
+  const { where, binds } = filters({ tab, date });
+  const { results } = await env.DB.prepare(`SELECT CAST(${MINUTE_OF_DAY} / 5 AS INTEGER) AS slot, COUNT(*) AS n FROM articles WHERE ${where.join(' AND ')} GROUP BY slot`)
+    .bind(...binds)
+    .all<{ slot: number; n: number }>();
+  return json({ date, timezone: TIMEZONE, slots: Object.fromEntries(results.map((r) => [r.slot, r.n])) }, 200, 'public, max-age=30');
+}
+
 // ─── GET /api/meta, /api/status ─────────────────────────────────────────────
 async function meta(env: Env): Promise<Response> {
-  const [counts, last] = await Promise.all([
+  const [counts, last, run] = await Promise.all([
     env.DB.prepare(`SELECT category, COUNT(*) AS n, SUM(georgia_related) AS g FROM articles WHERE ${PUBLISHED} GROUP BY category`).all<{ category: string; n: number; g: number }>(),
     env.DB.prepare(`SELECT MAX(published_at) AS t FROM articles WHERE ${PUBLISHED}`).first<{ t: string | null }>(),
+    env.DB.prepare(`SELECT MAX(finished_at) AS t FROM pipeline_runs WHERE finished_at IS NOT NULL`).first<{ t: string | null }>(),
   ]);
   const byCategory: Record<string, number> = Object.fromEntries(ARTICLE_CATEGORIES.map((c) => [c, 0]));
   let total = 0;
@@ -231,6 +253,7 @@ async function meta(env: Env): Promise<Response> {
       now: nowIso(now),
       nextRunAt: nowIso(nextSlot(now)),
       lastPublishedAt: last?.t ?? null,
+      lastRunAt: run?.t ?? null,
       counts: { total, georgia, byCategory },
       tabs: TABS.map(({ id, label }) => ({ id, label })),
     },
@@ -277,6 +300,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
       if (path === '/api/articles') return await listArticles(env, url.searchParams);
       const one = /^\/api\/articles\/([^/]+)$/.exec(path);
       if (one) return await getArticle(env, decodeURIComponent(one[1] as string));
+      if (path === '/api/slots') return await slots(env, url.searchParams);
       if (path === '/api/meta') return await meta(env);
       if (path === '/api/status') return await status(env);
     }

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#020617">
+<title>IOANE News</title>
+<meta name="description" content="Business, technology and Georgia news, researched, edited and fact-checked every five minutes. Each story carries a trust score and its sources.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Instrument+Sans:wght@400..600&family=Noto+Sans+Georgian:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="min-h-dvh bg-slate-950 font-sans text-slate-200 antialiased">
+<a href="#feed" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-emerald-500 focus:px-3 focus:py-2 focus:font-semibold focus:text-slate-950">Skip to stories</a>
+
+<header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
+    <a href="/" class="flex items-center gap-2.5" aria-label="IOANE News, home">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" class="fill-emerald-500"/><rect x="7" y="15" width="2.6" height="10" rx="1.3" class="fill-slate-950"/><rect x="11.4" y="11" width="2.6" height="14" rx="1.3" class="fill-slate-950"/><rect x="15.8" y="7" width="2.6" height="18" rx="1.3" class="fill-slate-950"/><rect x="20.2" y="12" width="2.6" height="13" rx="1.3" class="fill-amber-500"/></svg>
+      <span class="display text-lg font-bold tracking-tight text-white">IOANE <span class="font-medium text-emerald-400">News</span></span>
+    </a>
+    <p id="live" class="flex items-center gap-2 font-mono text-xs text-slate-400" role="status" aria-live="polite">
+      <span id="live-dot" class="size-2 rounded-full bg-slate-600"></span>
+      <span id="live-text">Connecting…</span>
+    </p>
+  </div>
+</header>
+
+<main class="mx-auto max-w-3xl px-4 pb-24">
+  <section class="pt-8 sm:pt-12" aria-labelledby="h1">
+    <h1 id="h1" class="display text-balance text-4xl font-extrabold leading-[1.02] text-white sm:text-5xl">
+      Verified in minutes, <span class="text-emerald-400">not hours.</span>
+    </h1>
+    <p class="mt-4 max-w-xl text-pretty text-base leading-relaxed text-slate-400">
+      Every story is researched, copy-edited and fact-checked on a five-minute cycle. Nothing is published without two independent sources or one primary source.
+    </p>
+
+    <div class="mt-8 rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4 sm:p-5">
+      <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+        <div>
+          <p class="eyebrow">The tape</p>
+          <p id="tape-title" class="display mt-1 text-lg font-semibold text-white">Today</p>
+        </div>
+        <form id="when" class="flex flex-wrap items-end gap-2" autocomplete="off">
+          <label class="grid gap-1">
+            <span class="eyebrow">Day</span>
+            <input id="date" name="date" type="date" class="field w-[9.25rem]" aria-describedby="when-hint">
+          </label>
+          <label class="grid gap-1">
+            <span class="eyebrow">Time slot</span>
+            <input id="time" name="time" type="time" step="300" class="field w-[8.75rem]" aria-describedby="when-hint">
+          </label>
+          <button id="clear" type="button" class="btn btn-ghost" hidden>Clear filters</button>
+        </form>
+      </div>
+
+      <div class="relative mt-8">
+        <canvas id="tape" class="block h-14 w-full touch-pan-y cursor-crosshair rounded-lg" tabindex="0" role="slider" aria-label="Pick a 5-minute slot" aria-valuemin="0" aria-valuemax="1435" aria-valuetext="No slot selected"></canvas>
+        <div id="tape-tip" class="pointer-events-none absolute -top-8 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[11px] text-slate-100 shadow-lg"></div>
+      </div>
+      <div class="mt-1.5 flex justify-between font-mono text-[10px] text-slate-500" aria-hidden="true">
+        <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
+      </div>
+      <p id="when-hint" class="mt-3 text-xs leading-relaxed text-slate-500">
+        Each tick is one 5-minute run; lit ticks published stories. Click or drag the tape, use the arrow keys, or type a time. All times are Tbilisi (GMT+4).
+      </p>
+    </div>
+  </section>
+
+  <nav id="tabs" aria-label="Categories" class="sticky top-14 z-30 -mx-4 mt-6 border-b border-slate-800/80 bg-slate-950/90 px-4 py-2.5 backdrop-blur">
+    <div id="tabs-row" class="fade-x flex gap-1 overflow-x-auto [scrollbar-width:none]"></div>
+  </nav>
+
+  <div class="mt-5 flex min-h-6 items-center justify-between gap-3">
+    <p id="result" class="font-mono text-xs text-slate-500" role="status" aria-live="polite"></p>
+  </div>
+
+  <div id="newbar" class="mt-3" hidden>
+    <button id="newbtn" type="button" class="btn btn-primary w-full">New verified stories are available. Show them</button>
+  </div>
+
+  <ol id="feed" class="mt-4 grid gap-4" aria-busy="true"></ol>
+
+  <div id="more" class="mt-6 flex justify-center" hidden>
+    <button id="morebtn" type="button" class="btn btn-ghost">Load more stories</button>
+  </div>
+
+  <details class="mt-14 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 text-sm text-slate-400">
+    <summary class="cursor-pointer select-none font-semibold text-slate-200">How stories are verified and scored</summary>
+    <div class="mt-4 grid gap-4 leading-relaxed">
+      <p>Three agents run in sequence every five minutes. The <strong class="text-slate-200">Research agent</strong> collects reporting from a registry of wires, regulators, central banks, statistical offices and specialist press. The <strong class="text-slate-200">Copy editor</strong> polishes tone and clarity without touching a single number. The <strong class="text-slate-200">Fact-checker</strong> scores the story from 0 to 100.</p>
+      <dl class="grid gap-x-6 gap-y-1.5 font-mono text-xs sm:grid-cols-[auto_1fr]">
+        <dt class="text-amber-300">5.0</dt><dd>Primary and official: central banks, statistical offices, regulators, ministries, journals</dd>
+        <dt class="text-amber-300">4.5</dt><dd>Wire services: Reuters, Associated Press</dd>
+        <dt class="text-amber-300">4.0</dt><dd>Major financial press</dd>
+        <dt class="text-amber-300">3.5</dt><dd>Specialist and tech press, company newsrooms</dd>
+        <dt class="text-amber-300">2.5–3.0</dt><dd>Commentary and newsletters</dd>
+        <dt class="text-amber-300">1.0–2.0</dt><dd>Social signals: used to discover stories, never to confirm them</dd>
+      </dl>
+      <p>A story is published only when it has two independent sources or a primary source, no claim contradicted by its sources, at least 70% of its claims backed, and a score of 60 or more. Open any story to see how its score was built.</p>
+    </div>
+  </details>
+</main>
+
+<footer class="border-t border-slate-800/80 py-8 text-center font-mono text-[11px] text-slate-600">
+  Times shown in Asia/Tbilisi (GMT+4). Stored in UTC.
+</footer>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

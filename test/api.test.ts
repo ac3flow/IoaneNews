@@ -157,6 +157,25 @@ describe('GET /api/articles', () => {
 });
 
 describe('other endpoints', () => {
+  it('GET /api/slots counts published stories per 5-minute Tbilisi slot for a day', async () => {
+    const env = makeEnv();
+    pub(env, 's1', '2026-10-03T13:15:00.000Z'); // 17:15 -> slot 207
+    pub(env, 's2', '2026-10-03T13:19:59.000Z'); // 17:19 -> slot 207
+    pub(env, 's3', '2026-10-03T05:30:00.000Z', { category: 'Crypto' }); // 09:30 -> slot 114
+    pub(env, 's4', '2026-10-03T19:59:00.000Z'); // 23:59 -> slot 287
+    pub(env, 's5', '2026-10-03T20:00:00.000Z'); // 00:00 on 4 Oct -> other day
+    insertArticle(env, { id: 'hidden', status: 'rejected', fact_checked: 1, published_at: '2026-10-03T13:16:00.000Z' });
+
+    const day = await get(env, '/api/slots?date=2026-10-03');
+    expect(day.status).toBe(200);
+    expect(day.body).toEqual({ date: '2026-10-03', timezone: 'Asia/Tbilisi', slots: { '207': 2, '114': 1, '287': 1 } });
+    expect((await get(env, '/api/slots?date=2026-10-03&tab=crypto')).body.slots).toEqual({ '114': 1 });
+    expect((await get(env, '/api/slots?date=2026-10-04')).body.slots).toEqual({ '0': 1 });
+    expect((await get(env, '/api/slots?date=nope')).status).toBe(400);
+    expect((await get(env, '/api/slots?tab=zzz')).status).toBe(400);
+    expect((await get(env, '/api/slots')).status).toBe(200); // defaults to today in Tbilisi
+  });
+
   it('GET /api/articles/:id returns the article and its trust breakdown', async () => {
     const env = makeEnv();
     pub(env, 'x1', '2026-10-03T10:00:00.000Z');
@@ -180,6 +199,9 @@ describe('other endpoints', () => {
     expect(Date.parse(body.nextRunAt) % 300_000).toBe(0);
     expect(Date.parse(body.nextRunAt)).toBeGreaterThan(Date.parse(body.now));
     expect(body.lastPublishedAt).toBe('2026-10-03T11:00:00.000Z');
+    expect(body.lastRunAt).toBeNull();
+    env.DB.raw.prepare(`INSERT INTO pipeline_runs (run_id, trigger, started_at, finished_at, status) VALUES ('r','cron','2026-10-03T13:15:00.000Z','2026-10-03T13:15:20.000Z','ok')`).run();
+    expect((await get(env, '/api/meta')).body.lastRunAt).toBe('2026-10-03T13:15:20.000Z');
   });
 
   it('GET /api/status exposes health without secrets', async () => {

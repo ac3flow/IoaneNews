@@ -126,8 +126,10 @@ const DEFS: Def[] = [
   ['NVIDIA Newsroom', S, 'nvidia.com blogs.nvidia.com', { feeds: [rss('https://blogs.nvidia.com/feed/', 'ai_tech')] }], // (v)
 
   // Academic journals & research (primary)
-  ['Nature', P, 'nature.com', { aliases: ['Nature Technology'], feeds: [rss('https://www.nature.com/nature.rss', 'education')] }], // (v)
-  ['Science', P, 'science.org', { feeds: [rss('https://www.science.org/rss/news_current.xml', 'education')] }], // (v)
+  // Weighted but not polled: their general feeds are mostly essays and non-business science, which
+  // would pass the primary-source rule and crowd out real business news.
+  ['Nature', P, 'nature.com', { aliases: ['Nature Technology'] }],
+  ['Science', P, 'science.org'],
   ['arXiv', P, 'arxiv.org'],
   ['SSRN', P, 'ssrn.com'],
   ['Google Scholar', C, 'scholar.google.com'],
