@@ -8,6 +8,7 @@ export const SCHEMA_STATEMENTS: string[] = [
   "CREATE INDEX IF NOT EXISTS idx_feed_items_pool ON feed_items(article_id, published_at DESC)",
   "CREATE TABLE IF NOT EXISTS article_translations ( article_id TEXT NOT NULL, lang TEXT NOT NULL, headline TEXT NOT NULL, summary TEXT NOT NULL, what_happened TEXT NOT NULL, why_it_matters TEXT NOT NULL, figures_dates TEXT, affected_entities TEXT, risks_uncertainty TEXT, grammar_checked INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (article_id, lang) )",
   "CREATE INDEX IF NOT EXISTS idx_translations_pending ON article_translations(lang, grammar_checked, created_at)",
+  "CREATE TABLE IF NOT EXISTS article_charts ( article_id TEXT NOT NULL, lang TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (article_id, lang) )",
   "CREATE TABLE IF NOT EXISTS pipeline_runs ( run_id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'all', trigger TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, stats TEXT )",
   "CREATE INDEX IF NOT EXISTS idx_runs_started ON pipeline_runs(started_at DESC)",
   "CREATE TABLE IF NOT EXISTS pipeline_events ( id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT, article_id TEXT, stage TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL )",

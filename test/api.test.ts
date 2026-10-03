@@ -29,8 +29,8 @@ describe('GET /api/articles', () => {
     expect(a1.figures).toEqual([{ label: 'Rate', value: '4.25%' }, { label: 'Next meeting', value: '28 October' }, { label: '', value: 'plain line' }]);
     expect(a1.affected_entities).toEqual(['Fed', 'Markets']);
     expect(a1.sources).toEqual([
-      { title: 'Fed statement', url: 'https://www.federalreserve.gov/x', trust_score: 5, name: 'Fed', tier: 'Primary / official' },
-      { title: 'HN', url: 'https://news.ycombinator.com/item?id=1', trust_score: 1.5, name: 'Hacker News', tier: 'Social signal' },
+      { title: 'Fed statement', url: 'https://www.federalreserve.gov/x', trust_score: 5, name: 'Fed', tier: 'primary' },
+      { title: 'HN', url: 'https://news.ycombinator.com/item?id=1', trust_score: 1.5, name: 'Hacker News', tier: 'social' },
     ]);
     expect(a1.published_at).toBe('2026-10-03T10:00:00.000Z'); // UTC on the wire
   });
@@ -181,7 +181,7 @@ describe('Georgian (lang=ka)', () => {
     expect(body.lang).toBe('ka');
     expect(body.articles.map((a: any) => a.id)).toEqual(['a1']);
     const a = body.articles[0];
-    expect(a).toMatchObject({ lang: 'ka', headline: 'ფედმა განაკვეთი არ შეცვალა', grammar_checked: true, trust_score: 90 });
+    expect(a).toMatchObject({ lang: 'ka', headline: 'ფედმა განაკვეთი არ შეცვალა', trust_score: 90 });
     expect(a.figures).toEqual([{ label: 'განაკვეთი', value: '4.25%' }]);
     expect(a.affected_entities).toEqual(['ფედი', 'ბაზრები']);
     expect(a.sources[0].name).toBe('Reuters'); // sources are shared across languages
@@ -322,5 +322,117 @@ describe('parseFigures', () => {
     expect(parseFigures(null)).toEqual([]);
     expect(parseFigures('')).toEqual([]);
     expect(parseFigures('* Meeting: 28 Oct, 14:00')).toEqual([{ label: 'Meeting', value: '28 Oct, 14:00' }]);
+  });
+});
+
+const exec = (env: Env, sql: string, ...p: unknown[]) => (env.DB as unknown as { raw: { prepare(s: string): { run(...p: unknown[]): unknown } } }).raw.prepare(sql).run(...p);
+
+describe('GET /api/articles/:id: chart and reporting timeline', () => {
+  const CHART = { title: 'Fed rate path', unit: '%', items: [{ label: 'Now', value: 4.25 }, { label: 'Target', value: 3.5 }] };
+  const KA_CHART = { title: 'ფედის განაკვეთი', unit: '%', items: [{ label: 'ახლა', value: 4.25 }, { label: 'მიზანი', value: 3.5 }] };
+
+  function seed(env: Env) {
+    pub(env, 'c1', '2026-10-03T10:00:00.000Z');
+    insertTranslation(env, 'c1');
+    exec(env, `INSERT INTO article_charts (article_id, lang, data, created_at) VALUES ('c1','en',?,'x'),('c1','ka',?,'x')`, JSON.stringify(CHART), JSON.stringify(KA_CHART));
+    const item = (id: string, url: string, at: string) =>
+      exec(env, `INSERT INTO feed_items (id, source_id, source_name, feed_id, title, url, published_at, fetched_at, article_id) VALUES (?,?,?,?,?,?,?,?, 'c1')`, id, 's', 's', 'f', 't', url, at, at);
+    item('i2', 'https://www.theblock.co/post/2', '2026-10-03T09:30:00.000Z');
+    item('i1', 'https://www.federalreserve.gov/x', '2026-10-03T08:00:00.000Z');
+    item('i3', 'javascript:alert(1)', '2026-10-03T07:00:00.000Z');
+    exec(env, `INSERT INTO feed_items (id, source_id, source_name, feed_id, title, url, published_at, fetched_at, article_id) VALUES ('other','s','s','f','t','https://www.reuters.com/o','2026-10-03T06:00:00.000Z','x','someone-else')`);
+  }
+
+  it('returns the chart in the requested language', async () => {
+    const env = makeEnv();
+    seed(env);
+    expect((await get(env, '/api/articles/c1?lang=en')).body.chart).toEqual(CHART);
+    expect((await get(env, '/api/articles/c1?lang=ka')).body.chart).toEqual(KA_CHART);
+  });
+
+  it('has no chart (null) when none was stored, and ignores a stored chart that no longer parses', async () => {
+    const env = makeEnv();
+    pub(env, 'plain', '2026-10-03T10:00:00.000Z');
+    expect((await get(env, '/api/articles/plain')).body.chart).toBeNull();
+    pub(env, 'broken', '2026-10-03T10:01:00.000Z');
+    exec(env, `INSERT INTO article_charts (article_id, lang, data, created_at) VALUES ('broken','en','{not json','x')`);
+    const r = await get(env, '/api/articles/broken');
+    expect(r.status).toBe(200);
+    expect(r.body.chart).toBeNull();
+  });
+
+  it('lists the cited items oldest first with publisher names, http(s) only, and only this story\'s items', async () => {
+    const env = makeEnv();
+    seed(env);
+    const { body } = await get(env, '/api/articles/c1');
+    expect(body.timeline).toEqual([
+      { name: 'Fed', url: 'https://www.federalreserve.gov/x', at: '2026-10-03T08:00:00.000Z' },
+      { name: 'The Block', url: 'https://www.theblock.co/post/2', at: '2026-10-03T09:30:00.000Z' },
+    ]);
+  });
+});
+
+describe('GET /api/articles?q= (text search)', () => {
+  it('matches headline or summary, case-insensitively, within the tab', async () => {
+    const env = makeEnv();
+    pub(env, 's1', '2026-10-03T10:00:00.000Z', { headline: 'Georgia raises its refinancing rate', category: 'Economics' });
+    pub(env, 's2', '2026-10-03T10:01:00.000Z', { headline: 'Chip startup raises funding', summary: 'The refinancing was led by an existing investor.', category: 'VC & Startups' });
+    pub(env, 's3', '2026-10-03T10:02:00.000Z', { headline: 'Bitcoin ETF flows', category: 'Crypto' });
+    const ids = async (q: string) => (await get(env, `/api/articles?${q}`)).body.articles.map((a: any) => a.id);
+    expect(await ids('q=REFINANCING')).toEqual(['s2', 's1']);
+    expect(await ids('q=refinancing&tab=economics')).toEqual(['s1']);
+    expect(await ids('q=nothing-like-this')).toEqual([]);
+  });
+
+  it('treats % and _ literally and rejects one-character searches', async () => {
+    const env = makeEnv();
+    pub(env, 'p1', '2026-10-03T10:00:00.000Z', { headline: 'Inflation hits 3.4% in September' });
+    pub(env, 'p2', '2026-10-03T10:01:00.000Z', { headline: 'Prices rise as demand grows' });
+    const ids = async (q: string) => (await get(env, `/api/articles?q=${encodeURIComponent(q)}`)).body.articles.map((a: any) => a.id);
+    expect(await ids('4%')).toEqual(['p1']);
+    expect(await ids('%%')).toEqual([]); // not a wildcard
+    expect(await ids('_ri')).toEqual([]);
+    expect((await get(env, '/api/articles?q=a')).status).toBe(400);
+  });
+
+  it('searches the Georgian text for lang=ka', async () => {
+    const env = makeEnv();
+    pub(env, 'k1', '2026-10-03T10:00:00.000Z', { headline: 'English only words' });
+    insertTranslation(env, 'k1', { headline: 'ეროვნული ბანკი ტოვებს განაკვეთს უცვლელად' });
+    const { body } = await get(env, `/api/articles?lang=ka&q=${encodeURIComponent('ბანკი')}`);
+    expect(body.articles.map((a: any) => a.id)).toEqual(['k1']);
+    expect((await get(env, '/api/articles?lang=ka&q=English')).body.articles).toEqual([]); // the English text is not searched in Georgian
+  });
+});
+
+describe('GET /api/stats', () => {
+  it('counts stories per hour (24 buckets ending now), category, trust band and source tier', async () => {
+    const env = makeEnv();
+    const now = Date.now();
+    const at = (hoursAgo: number) => new Date(now - hoursAgo * 3600_000).toISOString();
+    const links = (...w: [string, number][]) => JSON.stringify(w.map(([url, trust_score]) => ({ title: 't', url, trust_score })));
+    pub(env, 'h1', at(0.2), { category: 'Economics', trust_score: 95, source_links: links(['https://www.federalreserve.gov/a', 5], ['https://www.reuters.com/a', 4.5]) });
+    pub(env, 'h2', at(0.3), { category: 'Economics', trust_score: 72, source_links: links(['https://www.reuters.com/b', 4.5]) });
+    pub(env, 'h3', at(5), { category: 'Crypto', trust_score: 61, source_links: links(['https://www.coindesk.com/c', 3.5]) });
+    pub(env, 'old', at(80), { category: 'Crypto', trust_score: 85, source_links: links(['https://www.coindesk.com/d', 3.5]) });
+    insertArticle(env, { id: 'rej', status: 'rejected', fact_checked: 1, published_at: at(1) });
+
+    const { status, body } = await get(env, '/api/stats');
+    expect(status).toBe(200);
+    expect(body.perHour).toHaveLength(24);
+    expect(body.perHour.reduce((s: number, h: any) => s + h.n, 0)).toBe(body.last24h);
+    expect(body.last24h).toBe(3); // 'old' is outside 24h, 'rej' is not published
+    expect(body.perHour.every((h: any, i: number, all: any[]) => i === 0 || h.at > all[i - 1].at)).toBe(true);
+    expect(body.total).toBe(4);
+    expect(body.byCategory).toEqual([{ category: 'Economics', n: 2 }, { category: 'Crypto', n: 2 }]);
+    expect(body.trustSpread).toEqual([{ band: '<70', n: 1 }, { band: '70-79', n: 1 }, { band: '80-89', n: 1 }, { band: '90+', n: 1 }]);
+    expect(Object.fromEntries(body.sourceTiers.map((t: any) => [t.tier, t.n]))).toEqual({ primary: 1, wire: 2, specialist: 2 });
+  });
+
+  it('works on an empty database', async () => {
+    const { status, body } = await get(makeEnv(), '/api/stats');
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ total: 0, last24h: 0, byCategory: [], sourceTiers: [] });
+    expect(body.perHour).toHaveLength(24);
   });
 });

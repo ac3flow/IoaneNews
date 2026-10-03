@@ -1,9 +1,10 @@
-import { TIER_LABEL, tierOf } from './registry/sources';
+import { tierOf, type TierId } from './registry/sources';
 import { resolveSource } from './registry/trust';
 import { ensureSchema } from './db-init';
 import { PIPELINE_ORDER, STAGE_NAMES, runPipeline, type StageName } from './pipeline/run';
 import { parseLinks } from './pipeline/citations';
 import { SLOT_MS, TIMEZONE, dayRangeUtc, formatSlot, isDate, nextSlot, nowIso, parseSlotMinute, slotRangeUtc, tbilisiDate } from './time';
+import { ChartData } from './pipeline/schemas';
 import { ARTICLE_CATEGORIES, type ArticleRow, type Env } from './types';
 
 // ─── tabs ───────────────────────────────────────────────────────────────────
@@ -63,9 +64,8 @@ export interface ArticleDto {
   risks_uncertainty: string;
   category: string;
   georgia_related: boolean;
-  sources: { title: string; url: string; trust_score: number; name: string; tier: string }[];
+  sources: { title: string; url: string; trust_score: number; name: string; tier: TierId }[];
   trust_score: number;
-  grammar_checked: boolean;
   fact_checked: boolean;
   /** ISO-8601 UTC. The client renders it in Asia/Tbilisi. */
   published_at: string | null;
@@ -115,11 +115,9 @@ export function toDto(r: Row, rank?: number, lang: Lang = 'en'): ArticleDto {
       .map((l) => ({
         ...l,
         name: resolveSource(l.url).name,
-        tier: TIER_LABEL[tierOf(l.trust_score, l.trust_score < 2)],
+        tier: tierOf(l.trust_score, l.trust_score < 2),
       })),
     trust_score: r.trust_score,
-    // For Georgian, "grammar checked" means the Georgian Grammar Checker has passed (the join requires it).
-    grammar_checked: ka ? true : !!r.grammar_checked,
     fact_checked: !!r.fact_checked,
     published_at: r.published_at,
   };
@@ -134,6 +132,8 @@ export interface ListQuery {
   date?: string;
   slot?: number;
   limit: number;
+  /** Text search over headline and summary. */
+  q?: string;
   before?: { at: string; id: string };
 }
 
@@ -156,6 +156,11 @@ export function parseListQuery(sp: URLSearchParams): ListQuery | { error: string
     if (slot === null) return { error: 'time must be HH:MM, 24-hour (Asia/Tbilisi)' };
     q.slot = slot;
   }
+  const text = (sp.get('q') ?? '').trim();
+  if (text) {
+    if (text.length < 2) return { error: 'q must be at least 2 characters' };
+    q.q = text.slice(0, 80);
+  }
   const limit = sp.get('limit');
   if (limit) {
     const n = Number.parseInt(limit, 10);
@@ -174,7 +179,7 @@ export function parseListQuery(sp: URLSearchParams): ListQuery | { error: string
 /** Tbilisi minute-of-day (0–1439) of published_at. Tbilisi is a fixed UTC+4. */
 const MINUTE_OF_DAY = `(CAST(strftime('%H', published_at, '+4 hours') AS INTEGER) * 60 + CAST(strftime('%M', published_at, '+4 hours') AS INTEGER))`;
 
-function filters(q: Pick<ListQuery, 'tab' | 'date' | 'slot'>): { where: string[]; binds: (string | number)[]; bind: (v: string | number) => string } {
+function filters(q: Pick<ListQuery, 'tab' | 'date' | 'slot'> & { q?: string; lang?: Lang }): { where: string[]; binds: (string | number)[]; bind: (v: string | number) => string } {
   const where: string[] = [PUBLISHED];
   const binds: (string | number)[] = [];
   const bind = (v: string | number): string => {
@@ -182,6 +187,12 @@ function filters(q: Pick<ListQuery, 'tab' | 'date' | 'slot'>): { where: string[]
     return `?${binds.length}`;
   };
 
+  if (q.q) {
+    // LIKE with the user's own % and _ escaped. Georgian searches the Georgian text.
+    const like = bind(`%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    const [h, s] = q.lang === 'ka' ? ['t.headline', 't.summary'] : ['a.headline', 'a.summary'];
+    where.push(`(${h} LIKE ${like} ESCAPE '\\' OR ${s} LIKE ${like} ESCAPE '\\')`);
+  }
   if (q.tab === 'georgia') where.push('georgia_related = 1');
   const cat = TABS.find((t) => t.id === q.tab && 'category' in t);
   if (cat && 'category' in cat) where.push(`category = ${bind(cat.category)}`);
@@ -256,7 +267,21 @@ async function getArticle(env: Env, id: string, langParam: string | null): Promi
   const { select, from } = source(lang as Lang);
   const row = await env.DB.prepare(`SELECT ${select} FROM ${from} WHERE a.id = ?1 AND ${PUBLISHED}`).bind(id).first<Row>();
   if (!row) return fail(404, 'not found');
-  const audit = await env.DB.prepare(`SELECT detail FROM pipeline_events WHERE article_id = ?1 AND stage = 'fact_check' AND outcome = 'ok' ORDER BY id DESC LIMIT 1`).bind(id).first<{ detail: string | null }>();
+  const [audit, chartRow, items] = await Promise.all([
+    env.DB.prepare(`SELECT detail FROM pipeline_events WHERE article_id = ?1 AND stage = 'fact_check' AND outcome = 'ok' ORDER BY id DESC LIMIT 1`).bind(id).first<{ detail: string | null }>(),
+    env.DB.prepare(`SELECT data FROM article_charts WHERE article_id = ?1 AND lang = ?2`).bind(id, lang).first<{ data: string }>(),
+    // The items the story cites, in the order they were published: how the reporting developed.
+    env.DB.prepare(`SELECT url, published_at FROM feed_items WHERE article_id = ?1 ORDER BY published_at ASC LIMIT 12`).bind(id).all<{ url: string; published_at: string }>(),
+  ]);
+  let chart: ChartData | null = null;
+  try {
+    chart = chartRow ? ChartData.parse(JSON.parse(chartRow.data)) : null;
+  } catch {
+    /* a chart that no longer parses is simply not shown */
+  }
+  const timeline = items.results
+    .filter((i) => /^https?:\/\//i.test(i.url))
+    .map((i) => ({ name: resolveSource(i.url).name, url: i.url, at: i.published_at }));
   let trust: unknown = null;
   try {
     const d = audit?.detail ? (JSON.parse(audit.detail) as Record<string, unknown>) : null;
@@ -264,7 +289,7 @@ async function getArticle(env: Env, id: string, langParam: string | null): Promi
   } catch {
     /* audit detail is best-effort */
   }
-  return json({ article: toDto(row, undefined, lang as Lang), trust }, 200, 'public, max-age=60');
+  return json({ article: toDto(row, undefined, lang as Lang), trust, chart, timeline }, 200, 'public, max-age=60');
 }
 
 // ─── GET /api/slots ─────────────────────────────────────────────────────────
@@ -280,6 +305,54 @@ async function slots(env: Env, sp: URLSearchParams): Promise<Response> {
     .bind(...binds)
     .all<{ slot: number; n: number }>();
   return json({ date, timezone: TIMEZONE, slots: Object.fromEntries(results.map((r) => [r.slot, r.n])) }, 200, 'public, max-age=30');
+}
+
+// ─── GET /api/stats ─────────────────────────────────────────────────────────
+/** Numbers behind the home page charts: stories per hour, per category, trust spread and source mix. */
+async function stats(env: Env): Promise<Response> {
+  const now = Date.now();
+  const hourStart = Math.floor(now / 3600_000) * 3600_000;
+  const since = hourStart - 23 * 3600_000;
+  const [hours, cats, trust, links, avg] = await Promise.all([
+    env.DB.prepare(`SELECT strftime('%Y-%m-%dT%H:00:00.000Z', published_at) AS h, COUNT(*) AS n FROM articles WHERE ${PUBLISHED} AND published_at >= ?1 GROUP BY h`)
+      .bind(nowIso(since))
+      .all<{ h: string; n: number }>(),
+    env.DB.prepare(`SELECT category, COUNT(*) AS n FROM articles WHERE ${PUBLISHED} GROUP BY category ORDER BY n DESC`).all<{ category: string; n: number }>(),
+    env.DB.prepare(
+      `SELECT CASE WHEN trust_score >= 90 THEN 3 WHEN trust_score >= 80 THEN 2 WHEN trust_score >= 70 THEN 1 ELSE 0 END AS b, COUNT(*) AS n FROM articles WHERE ${PUBLISHED} GROUP BY b`,
+    ).all<{ b: number; n: number }>(),
+    env.DB.prepare(`SELECT source_links FROM articles WHERE ${PUBLISHED} ORDER BY published_at DESC LIMIT 100`).all<{ source_links: string }>(),
+    env.DB.prepare(`SELECT AVG(trust_score) AS a FROM articles WHERE ${PUBLISHED}`).first<{ a: number | null }>(),
+  ]);
+
+  const byHour = new Map(hours.results.map((r) => [r.h, r.n]));
+  const perHour = Array.from({ length: 24 }, (_, i) => {
+    const at = nowIso(since + i * 3600_000);
+    return { at, n: byHour.get(at) ?? 0 };
+  });
+  const spread = [0, 1, 2, 3].map((b) => ({ band: ['<70', '70-79', '80-89', '90+'][b] as string, n: trust.results.find((r) => r.b === b)?.n ?? 0 }));
+  const tiers = new Map<TierId, number>();
+  for (const r of links.results) {
+    for (const l of parseLinks(r.source_links)) {
+      const id = tierOf(l.trust_score, l.trust_score < 2);
+      tiers.set(id, (tiers.get(id) ?? 0) + 1);
+    }
+  }
+  return json(
+    {
+      timezone: TIMEZONE,
+      now: nowIso(now),
+      total: cats.results.reduce((s, r) => s + r.n, 0),
+      last24h: perHour.reduce((s, r) => s + r.n, 0),
+      avgTrust: avg?.a == null ? null : Math.round(avg.a),
+      perHour,
+      byCategory: cats.results,
+      trustSpread: spread,
+      sourceTiers: [...tiers].map(([tier, n]) => ({ tier, n })).sort((a, b) => b.n - a.n),
+    },
+    200,
+    'public, max-age=60',
+  );
 }
 
 // ─── GET /api/meta, /api/status ─────────────────────────────────────────────
@@ -366,6 +439,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
       const one = /^\/api\/articles\/([^/]+)$/.exec(path);
       if (one) return await getArticle(env, decodeURIComponent(one[1] as string), url.searchParams.get('lang'));
       if (path === '/api/slots') return await slots(env, url.searchParams);
+      if (path === '/api/stats') return await stats(env);
       if (path === '/api/meta') return await meta(env);
       if (path === '/api/status') return await status(env);
     }

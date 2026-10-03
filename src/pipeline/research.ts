@@ -14,6 +14,7 @@ import { FEEDS, articleCategoryFor, type FeedRef } from '../registry/sources';
 import { SLOT_MS, nowIso } from '../time';
 import type { FeedItemRow } from '../types';
 import { citationFromItem, linksFromCitations } from './citations';
+import { groundChart } from './chart';
 import { clusterItems } from './cluster';
 import { logEvent, type StageCtx } from './context';
 import { fetchFeed, sha, type RawItem } from './feeds';
@@ -238,6 +239,16 @@ export async function researchStage(ctx: StageCtx): Promise<Record<string, unkno
       ).bind(id, b.headline, b.summary, b.what_happened, b.why_it_matters, b.figures_dates, b.affected_entities, b.risks_uncertainty, b.category, georgia, JSON.stringify(linksFromCitations(ev.citations)), ts),
       env.DB.prepare(`UPDATE feed_items SET article_id = ?1 WHERE article_id IS NULL AND id IN (SELECT value FROM json_each(?2))`).bind(id, JSON.stringify(ids)),
     );
+    // The optional chart is kept only if every number in it is stated by the cited items or the draft.
+    const chart = groundChart(
+      b.chart,
+      [...items.map((i) => `${i.title}\n${i.snippet ?? ''}`), b.headline, b.summary, b.what_happened, b.figures_dates].join('\n'),
+    );
+    if (chart) {
+      statements.push(env.DB.prepare(`INSERT OR IGNORE INTO article_charts (article_id, lang, data, created_at) VALUES (?1, 'en', ?2, ?3)`).bind(id, JSON.stringify(chart), ts));
+    } else if (b.chart) {
+      logEvent(ctx, { articleId: id, stage: 'research', outcome: 'skipped', detail: { reason: 'chart_not_grounded' } });
+    }
     ids.forEach((i) => used.add(i));
     created.push(id);
     logEvent(ctx, { articleId: id, stage: 'research', outcome: 'ok', detail: { sources: ev.citations.map((c) => ({ name: c.name, weight: c.weight })), independent: ev.independent } });

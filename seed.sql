@@ -5,6 +5,8 @@
 DELETE FROM articles WHERE id LIKE 'sample\_%' ESCAPE '\';
 DELETE FROM pipeline_events WHERE article_id LIKE 'sample\_%' ESCAPE '\';
 DELETE FROM article_translations WHERE article_id LIKE 'sample\_%' ESCAPE '\';
+DELETE FROM article_charts WHERE article_id LIKE 'sample\_%' ESCAPE '\';
+DELETE FROM feed_items WHERE id LIKE 'sample\_%' ESCAPE '\';
 
 INSERT INTO articles (id, headline, summary, what_happened, why_it_matters, figures_dates, affected_entities, risks_uncertainty,
   category, georgia_related, source_links, trust_score, grammar_checked, fact_checked, status, published_at, created_at, updated_at) VALUES
@@ -78,3 +80,18 @@ INSERT INTO article_translations (article_id, lang, headline, summary, what_happ
 ზედმეტი მოთხოვნა: 3-ჯერ', 'საქართველოს მთავრობა, საერთაშორისო ინვესტორები', 'ბაზრის პირობები შეიძლება შეიცვალოს; სამინისტროს განაწილების საბოლოო ცხრილი ჯერ არ გამოუქვეყნებია.', 1, strftime('%Y-%m-%dT%H:%M:%fZ','now','-540 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-540 minutes')),
 ('sample_13', 'ka', '[ნიმუში] კონტეინერული ტვირთის განაკვეთები მცირდება, რადგან ძირითად მარშრუტებზე მოცულობა ბრუნდება', 'მთავარ მარშრუტებზე სპოტ განაკვეთები ზედიზედ მეოთხე კვირაა ეცემა.', 'აზია–ევროპისა და ტრანსპაციფიკური მთავარი მარშრუტების კონტეინერული ტვირთის სპოტ განაკვეთები ზედიზედ მეოთხე კვირაა ეცემა, რადგან გემების მოცულობა ექსპლუატაციაში ბრუნდება. ეს ორმა სანაოსნო გამოცემამ იტყობინა.', 'ტვირთის დაბალი ღირებულება იმპორტიორებსა და საცალო გამყიდველებს ზეწოლას უმსუბუქებს და გარკვეული დაგვიანებით შეიძლება საქონლის ინფლაციასაც შეამციროს.', 'ინდექსის ცვლილება, კვირა: 5%-ით დაბლა', 'იმპორტიორები, საცალო გამყიდველები, გადამზიდავი ხაზები', 'განაკვეთები სწრაფად შეიძლება გაიზარდოს, თუ შეფერხებები დაბრუნდება ან მოთხოვნა სეზონის პიკამდე გაიზრდება.', 1, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1560 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1560 minutes')),
 ('sample_14', 'ka', '[ნიმუში] უნივერსიტეტები მონაცემთა მეცნიერების პროგრამებზე განაცხადების ზრდას აცხადებენ', 'მონაცემებისა და AI პროგრამებზე განაცხადების რაოდენობა გასულ წელთან შედარებით გაიზარდა.', 'რამდენიმე უნივერსიტეტმა მონაცემთა მეცნიერებისა და AI პროგრამებზე წელს მეტი განაცხადის შესახებ იტყობინება, ამბობს ორი საგანმანათლებლო გამოცემა. მოთხოვნა ყველაზე მაღალია ერთწლიან სამაგისტრო პროგრამებზე.', 'კურსდამთავრებულთა დასაქმება და პროგრამების შეთავაზება AI უნარებზე მოთხოვნას ერგება, რაც დამსაქმებელთა დაქირავების გეგმებზე აისახება.', 'განაცხადების ზრდა: 21% გასულ წელთან შედარებით', 'უნივერსიტეტები, დამსაქმებლები, აბიტურიენტები', 'განაცხადების რაოდენობა არ აჩვენებს, რამდენი სტუდენტი ჩაირიცხება ან დაამთავრებს პროგრამას.', 1, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1700 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1700 minutes'));
+
+
+-- Sample charts (numbers taken from the sample stories' own figures) and the cited feed items,
+-- so the story page shows its chart and its "how the reporting developed" timeline.
+INSERT INTO article_charts (article_id, lang, data, created_at) VALUES
+('sample_01', 'en', '{"title":"Policy rate and inflation","unit":"%","items":[{"label":"Refinancing rate","value":8.0},{"label":"Inflation, year on year","value":3.4}]}', strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+('sample_01', 'ka', '{"title":"საპროცენტო განაკვეთი და ინფლაცია","unit":"%","items":[{"label":"რეფინანსირების განაკვეთი","value":8.0},{"label":"ინფლაცია, წლიური","value":3.4}]}', strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+('sample_04', 'en', '{"title":"World goods trade forecast","unit":"%","items":[{"label":"New volume growth forecast","value":1.9},{"label":"Downward revision, points","value":0.6}]}', strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+('sample_04', 'ka', '{"title":"მსოფლიო საქონლით ვაჭრობის პროგნოზი","unit":"%","items":[{"label":"ზრდის ახალი პროგნოზი","value":1.9},{"label":"შემცირება, პროცენტული პუნქტი","value":0.6}]}', strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+
+INSERT INTO feed_items (id, source_id, source_name, feed_id, title, url, snippet, published_at, fetched_at, article_id) VALUES
+('sample_f1', 'nbg', 'National Bank of Georgia', 'nbg-news', 'NBG press release: Monetary Policy Committee decision', 'https://nbg.gov.ge/en/media/news', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now','-125 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-120 minutes'), 'sample_01'),
+('sample_f2', 'civil-ge', 'Civil.ge', 'civil-ge', 'Georgia''s central bank keeps rate on hold', 'https://civil.ge/', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now','-105 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-100 minutes'), 'sample_01'),
+('sample_f3', 'wto', 'WTO', 'wto', 'WTO: updated trade forecast', 'https://www.wto.org/', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now','-48 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 minutes'), 'sample_04'),
+('sample_f4', 'reuters', 'Reuters', 'reuters', 'WTO cuts global trade growth forecast', 'https://www.reuters.com/', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now','-39 minutes'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-36 minutes'), 'sample_04');

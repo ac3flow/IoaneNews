@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS article_translations (
 
 CREATE INDEX IF NOT EXISTS idx_translations_pending ON article_translations(lang, grammar_checked, created_at);
 
+-- Optional bar chart per article and language, built only from numbers the sources state
+-- (checked in code before it is stored). `data` is JSON: {title, unit, items: [{label, value}]}.
+CREATE TABLE IF NOT EXISTS article_charts (
+    article_id TEXT NOT NULL,
+    lang TEXT NOT NULL,                 -- 'en' (written by Research) | 'ka' (written by the Translator)
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (article_id, lang)
+);
+
 -- One row per pipeline execution (cron or manual). Doubles as the run lock (one live run per scope).
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     run_id TEXT PRIMARY KEY,
