@@ -46,7 +46,7 @@ An article drafted at `:01` is published at `:03`. The five expressions in `wran
 |---|---|---|---|
 | `GEMINI_API_KEY` | secret | – | Required for any drafting, editing, fact-checking or translating. Without it the Worker still collects sources but publishes nothing. |
 | `ADMIN_KEY` | secret | – | Enables `POST /api/run[/stage]`, sent as `x-admin-key` or `Authorization: Bearer`. Unset = endpoint disabled. |
-| `GEMINI_MODEL` | var | `gemini-3.8-flash` | Same variable agent 2 uses. Google retires old models for new accounts (`gemini-2.5-flash` now answers 404 "no longer available to new users"); current names are at <https://ai.google.dev/gemini-api/docs/models>. |
+| `GEMINI_MODEL` | var | `gemini-3.5-flash-lite` | Same variable agent 2 uses. Google retires old models for new accounts (`gemini-2.5-flash` now answers 404 "no longer available to new users"); current names are at <https://ai.google.dev/gemini-api/docs/models>. |
 | `GEMINI_MODEL_KA` | var | `GEMINI_MODEL` | Optional stronger model for translate + Georgian grammar check. |
 | `GEMINI_BASE_URL` | var | Google's endpoint | Route calls through a gateway (e.g. Cloudflare AI Gateway). |
 | `PIPELINE_MODE` | var | `staged` | `staged` (Free) or `single` (Paid). |
@@ -121,7 +121,7 @@ npm run typecheck
 
 ## Known limits
 
-- **The Georgian has not been read by a native speaker.** The interface text, the agents' prompts and the demo content were written without native review. The Georgian grammar checker and the code guards catch a lot, but they are no substitute for a person. Before launch, have a Georgian speaker read the interface strings in `public/i18n.js` and a day of generated stories, and consider `GEMINI_MODEL_KA` set to a larger model.
+- **The Georgian has not been read by a native speaker.** The interface text, the agents' prompts and the demo content were written without native review. The Georgian grammar checker and the code guards catch a lot, but they are no substitute for a person. Before launch, have a Georgian speaker read the interface strings in `public/i18n.js` and a day of generated stories, and consider `GEMINI_MODEL_KA` set to a larger model (`gemini-3.8-flash`). The default `gemini-3.5-flash-lite` is the cheapest tier and the one most likely to slip on Georgian grammar.
 - **Gemini calls are tested against a fake, not live.** The request shape is the same as agent 2's working call plus `system_instruction`; the environment this was built in had no key. Check `GET /api/status` after the first cron runs: `lastError` shows the latest stage-level failure (for example Gemini rejecting the model name).
 - **The Free plan's CPU limit is the main risk** (see above). Workers Paid removes it.
 - **Fact-checking judges claims against feed excerpts** (title plus up to 600 characters), not full articles. Briefings are therefore short, and the Research prompt forbids facts the excerpts do not state. Translation fidelity is guarded by the digit check and the grammar pass, not by a second fact-check of the Georgian.

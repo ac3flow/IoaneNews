@@ -84,10 +84,10 @@ This builds the stylesheet and publishes the Worker. It replaces the current `io
 | You see | Likely cause and fix |
 |---|---|
 | No stories after 30 minutes, `llmConfigured: false` | The `GEMINI_API_KEY` secret is missing. Add it again (step A3 or 3), then redeploy. |
-| `lastError` says `Gemini 404 … no longer available to new users` | Google retired the model named in `wrangler.jsonc`. Open <https://ai.google.dev/gemini-api/docs/models>, pick a current Flash model (at the time of writing `gemini-3.8-flash`), put it in the `GEMINI_MODEL` line, and deploy again. |
+| `lastError` says `Gemini 404 … no longer available to new users` | Google retired the model named in `wrangler.jsonc`. Open <https://ai.google.dev/gemini-api/docs/models>, pick a current Flash model (this project uses `gemini-3.5-flash-lite`; `gemini-3.8-flash` is the larger one), put it in the `GEMINI_MODEL` line, and deploy again. |
 | `lastRun` has `"status": "error"` | `curl https://ioane-news.ac3flow33.workers.dev/api/status`, then in the dashboard open **ioane-news → Logs** to read the error. A Gemini error (429, 503) usually passes by itself. |
 | Logs show `Worker exceeded CPU time limit` (error 1102) | The Free plan's CPU limit. Either set `FEEDS_PER_RUN` to `15` in `wrangler.jsonc` and run `npm run deploy`, or move to Workers Paid (below). |
-| Georgian text reads badly | Uncomment `GEMINI_MODEL_KA` in `wrangler.jsonc` to use a larger Gemini model for the Georgian stages, then `npm run deploy`. Have a Georgian speaker review the interface text in `public/i18n.js`. |
+| Georgian text reads badly | `gemini-3.5-flash-lite` is the smallest Gemini tier. Uncomment `GEMINI_MODEL_KA` in `wrangler.jsonc` (set to `gemini-3.8-flash`) to use a larger Gemini model for the Georgian stages only, then `npm run deploy`. Have a Georgian speaker review the interface text in `public/i18n.js`. |
 | The page loads but has no styling | The build step failed. Run `npm run build`, then deploy again. |
 | Build log: `binding DB … must have a valid database_id` | `wrangler.jsonc` still has `PASTE_YOUR_D1_ID_HERE`. See step A1 or 2. |
 | Build log: `Failed to match Worker name` | See step A2. |

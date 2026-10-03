@@ -28,7 +28,7 @@ describe('Gemini client', () => {
     const { llm, calls } = setup([reply('{"ok":true}')]);
     expect(await llm.json({ system: 'SYS', user: 'USER', schema, label: 't' })).toEqual({ ok: true });
     const c = calls[0]!;
-    expect(c.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
+    expect(c.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
     expect(c.headers['x-goog-api-key']).toBe('k-123');
     expect(c.body.system_instruction.parts[0].text).toBe('SYS');
     expect(c.body.contents).toEqual([{ role: 'user', parts: [{ text: 'USER' }] }]);

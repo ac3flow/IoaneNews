@@ -41,7 +41,7 @@ type Turn = { role: 'user' | 'model'; parts: { text: string }[] };
 export function createLlm(env: Env, fetchImpl: typeof fetch = fetch): Llm | null {
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return null;
-  const model = env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const base = (env.GEMINI_BASE_URL || DEFAULT_BASE).replace(/\/+$/, '');
 
   async function call(system: string, contents: Turn[], modelOverride?: string): Promise<string> {
