@@ -1,0 +1,42 @@
+{
+  "name": "ioane-news",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+
+  // Static UI lives in ./public. The Worker only runs for /api/* (and cron).
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Regenerate the Tailwind stylesheet on every `wrangler dev` / `wrangler deploy`.
+  "build": { "command": "npm run build:css" },
+
+  // One trigger drives the whole pipeline: Research -> Edit -> Fact-Check -> Publish/Reject.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ioane-news",
+      // Create it once:  npx wrangler d1 create ioane-news   then paste the id here.
+      "database_id": "PASTE_YOUR_D1_ID_HERE"
+    }
+  ],
+
+  "vars": {
+    // Same variable names agent 2 already uses. Change if Google retires the model name.
+    "GEMINI_MODEL": "gemini-2.5-flash",
+
+    // Pipeline tuning. Raise/lower to trade cost and subrequests against freshness.
+    "FEEDS_PER_RUN": "10",        // feeds polled per 5-minute run (round-robin over the registry)
+    "MAX_ARTICLES_PER_RUN": "3",  // new briefings drafted per run
+    "PUBLISH_THRESHOLD": "60"     // minimum trust score (0-100) to publish
+  }
+
+  // Secrets (set with `wrangler secret put`, never put them in this file):
+  //   GEMINI_API_KEY   - same key agent 2 uses
+  //   ADMIN_KEY        - enables POST /api/run (manual pipeline trigger)
+}
