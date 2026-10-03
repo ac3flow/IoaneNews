@@ -6,6 +6,7 @@
   "description": "IOANE News: multi-agent verified news pipeline (Cloudflare Worker + D1)",
   "scripts": {
     "dev": "wrangler dev --test-scheduled",
+    "build": "node scripts/gen-schema.mjs && npm run build:css",
     "build:css": "tailwindcss -i ./src/ui/input.css -o ./public/styles.css --minify",
     "watch:css": "tailwindcss -i ./src/ui/input.css -o ./public/styles.css --watch",
     "deploy": "wrangler deploy",

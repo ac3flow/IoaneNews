@@ -101,7 +101,7 @@ All stored timestamps are UTC ISO-8601. The browser renders them in `Asia/Tbilis
 
 ## Database
 
-`schema.sql` holds the `articles` table exactly as specified, plus operational tables: `article_translations` (the Georgian text, one row per article and language), `feed_items` (the rolling pool of collected items), `pipeline_runs` (also the run lock, one live run per scope) and `pipeline_events` (audit trail). It is safe to re-run. If a different `articles` table already exists in the target database, `CREATE TABLE IF NOT EXISTS` will not change it, so use a fresh database.
+`schema.sql` holds the `articles` table exactly as specified, plus operational tables: `article_translations` (the Georgian text, one row per article and language), `feed_items` (the rolling pool of collected items), `pipeline_runs` (also the run lock, one live run per scope) and `pipeline_events` (audit trail). The Worker creates these tables itself on first use (`src/db-init.ts`, generated from `schema.sql` by `npm run build`), so a fresh database needs no setup. It is safe to re-run. If a different `articles` table already exists in the target database, `CREATE TABLE IF NOT EXISTS` will not change it, so use a fresh database.
 
 Articles, translations and feed items are never deleted. Run and event logs older than 30 days are trimmed daily. Drafts not published within 24 hours are rejected as stale.
 
@@ -109,7 +109,7 @@ Articles, translations and feed items are never deleted. Run and event logs olde
 
 ```bash
 npm install
-npm run build:css
+npm run build                        # regenerates src/schema.ts and the stylesheet
 npm run db:init && npm run db:seed   # local D1 + clearly-labelled "[Sample]" stories, in both languages
 npm run dev                          # http://localhost:8787
 curl "http://localhost:8787/__scheduled?cron=2-59%2F5+*+*+*+*"   # fire one staged trigger

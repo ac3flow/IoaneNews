@@ -1,5 +1,6 @@
 import { TIER_LABEL, tierOf } from './registry/sources';
 import { resolveSource } from './registry/trust';
+import { ensureSchema } from './db-init';
 import { PIPELINE_ORDER, STAGE_NAMES, runPipeline, type StageName } from './pipeline/run';
 import { parseLinks } from './pipeline/citations';
 import { SLOT_MS, TIMEZONE, dayRangeUtc, formatSlot, isDate, nextSlot, nowIso, parseSlotMinute, slotRangeUtc, tbilisiDate } from './time';
@@ -346,6 +347,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/\/+$/, '') || '/';
   try {
+    await ensureSchema(env);
     if (req.method === 'GET' || req.method === 'HEAD') {
       if (path === '/api/articles') return await listArticles(env, url.searchParams);
       const one = /^\/api\/articles\/([^/]+)$/.exec(path);

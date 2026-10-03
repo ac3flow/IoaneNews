@@ -11,8 +11,9 @@
     "run_worker_first": ["/api/*"]
   },
 
-  // Regenerate the Tailwind stylesheet on every `wrangler dev` / `wrangler deploy`.
-  "build": { "command": "npm run build:css" },
+  // On every `wrangler dev` / `wrangler deploy` (and every Cloudflare build): regenerate src/schema.ts from
+  // schema.sql and rebuild the Tailwind stylesheet. The Worker creates its own tables on first use.
+  "build": { "command": "npm run build" },
 
   // WORKERS FREE (default): five triggers, one minute apart, each running one slice of the pipeline,
   // so every invocation gets its own CPU / subrequest / D1-query budget.
@@ -34,7 +35,7 @@
       "binding": "DB",
       "database_name": "ioane-news",
       // Create it once:  npx wrangler d1 create ioane-news   then paste the id here.
-      "database_id": "PASTE_YOUR_D1_ID_HERE"
+      "database_id": "944aa348-911c-4db4-9182-878f9c801456"
     }
   ],
 

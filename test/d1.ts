@@ -21,9 +21,9 @@ class Stmt {
   }
 }
 
-export function createD1(): D1Database & { raw: DatabaseSync } {
+export function createD1(opts: { schema?: boolean } = {}): D1Database & { raw: DatabaseSync } {
   const db = new DatabaseSync(':memory:');
-  db.exec(schema);
+  if (opts.schema !== false) db.exec(schema);
   const shim = {
     raw: db,
     prepare: (sql: string) => new Stmt(db, sql),
