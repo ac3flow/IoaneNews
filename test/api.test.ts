@@ -276,6 +276,21 @@ describe('other endpoints', () => {
     expect(JSON.stringify(body)).not.toContain('sk-secret');
   });
 
+  it('GET /api/status shows the latest stage-level failure (so a retired model is visible without the admin key)', async () => {
+    const env = makeEnv({ GEMINI_API_KEY: 'sk-secret' });
+    expect((await get(env, '/api/status')).body.lastError).toBeNull();
+    const ev = env.DB.raw.prepare(`INSERT INTO pipeline_events (article_id, stage, outcome, detail, created_at) VALUES (?, ?, 'error', ?, ?)`);
+    const now = new Date().toISOString();
+    ev.run(null, 'feed', JSON.stringify({ error: 'HTTP 403' }), now); // feed failures are not stage failures
+    ev.run('a1', 'edit', JSON.stringify({ reason: 'facts_changed' }), now); // per-article retries are not either
+    ev.run(null, 'research', JSON.stringify({ error: 'Gemini 404: ' + 'x'.repeat(500) }), now);
+    const { body } = await get(env, '/api/status');
+    expect(body.lastError).toMatchObject({ stage: 'research' });
+    expect(body.lastError.message.startsWith('Gemini 404: ')).toBe(true);
+    expect(body.lastError.message.length).toBe(300);
+    expect(JSON.stringify(body)).not.toContain('sk-secret');
+  });
+
   it('POST /api/run requires the admin key (header or bearer), is disabled without one, and rejects GET', async () => {
     const call = (env: Env, init: RequestInit, path = '/api/run/research') => handleApi(new Request(`https://news.test${path}`, init), env);
     const off = makeEnv();

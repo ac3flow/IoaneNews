@@ -315,17 +315,30 @@ async function meta(env: Env): Promise<Response> {
 
 async function status(env: Env): Promise<Response> {
   const since = nowIso(Date.now() - 24 * 3600_000);
-  const [run, queue, feedErrors] = await Promise.all([
+  const [run, queue, feedErrors, lastError] = await Promise.all([
     env.DB.prepare(`SELECT run_id, trigger, started_at, finished_at, status, stats FROM pipeline_runs ORDER BY started_at DESC LIMIT 1`).first<Record<string, string | null>>(),
     env.DB.prepare(`SELECT status, COUNT(*) AS n FROM articles GROUP BY status`).all<{ status: string; n: number }>(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM pipeline_events WHERE stage = 'feed' AND outcome = 'error' AND created_at >= ?1`).bind(since).first<{ n: number }>(),
+    // Most recent stage-level failure (e.g. Gemini rejecting the model name), newest first.
+    env.DB.prepare(`SELECT stage, detail, created_at FROM pipeline_events WHERE outcome = 'error' AND article_id IS NULL AND stage != 'feed' AND created_at >= ?1 ORDER BY id DESC LIMIT 1`).bind(since).first<{ stage: string; detail: string | null; created_at: string }>(),
   ]);
+  let lastErrorOut: { stage: string; at: string; message: string } | null = null;
+  if (lastError) {
+    let message = 'unknown error';
+    try {
+      message = String((JSON.parse(lastError.detail ?? '{}') as { error?: string }).error ?? message);
+    } catch {
+      /* keep the default */
+    }
+    lastErrorOut = { stage: lastError.stage, at: lastError.created_at, message: message.slice(0, 300) };
+  }
   return json({
     ok: run?.status !== 'error',
     llmConfigured: !!env.GEMINI_API_KEY,
     lastRun: run ? { startedAt: run.started_at, finishedAt: run.finished_at, status: run.status, trigger: run.trigger } : null,
     articles: Object.fromEntries(queue.results.map((r) => [r.status, r.n])),
     feedErrors24h: feedErrors?.n ?? 0,
+    lastError: lastErrorOut,
   });
 }
 

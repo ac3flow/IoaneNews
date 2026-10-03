@@ -41,7 +41,7 @@ type Turn = { role: 'user' | 'model'; parts: { text: string }[] };
 export function createLlm(env: Env, fetchImpl: typeof fetch = fetch): Llm | null {
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return null;
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = env.GEMINI_MODEL || 'gemini-3.8-flash';
   const base = (env.GEMINI_BASE_URL || DEFAULT_BASE).replace(/\/+$/, '');
 
   async function call(system: string, contents: Turn[], modelOverride?: string): Promise<string> {
@@ -55,7 +55,7 @@ export function createLlm(env: Env, fetchImpl: typeof fetch = fetch): Llm | null
           body: JSON.stringify({
             system_instruction: { parts: [{ text: system }] },
             contents,
-            generationConfig: { temperature: 0.2, responseMimeType: 'application/json', maxOutputTokens: 16384 },
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 16384 }, // default temperature: recommended for Gemini 3
           }),
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
