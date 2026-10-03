@@ -24,12 +24,13 @@ Rules:
 - risks_uncertainty: what is unconfirmed, single-sourced, preliminary or could change. Always at least one sentence.
 - category: exactly one of ${ARTICLE_CATEGORIES.map((c) => `"${c}"`).join(', ')}.
 - georgia_related: true only when the story concerns the country Georgia (Sakartvelo): its economy, institutions, companies, markets or region. False for the US state.
+- chart: optional, otherwise null. Include it only when the items state two to six comparable numbers in one unit (two periods, two companies, shares of a total). Form: {"title":"...","unit":"...","items":[{"label":"...","value":<number>}]}. Every value, and any number inside a label, must appear in the items exactly; never compute, estimate or round a figure. Labels are short. If in doubt, null.
 - used_item_ids: the ids of the items you actually relied on. Use at least one. Do not list an item that is about a different event.
 - Write in English, even if a source is in Georgian.
 
 ${UNTRUSTED}
 
-Return JSON: {"briefings":[{"cluster_id","headline","summary","what_happened","why_it_matters","figures_dates","affected_entities","risks_uncertainty","category","georgia_related","used_item_ids"}]}. At most one briefing per cluster. Omit a cluster if its items do not support a factual briefing.`;
+Return JSON: {"briefings":[{"cluster_id","headline","summary","what_happened","why_it_matters","figures_dates","affected_entities","risks_uncertainty","category","georgia_related","chart","used_item_ids"}]}. At most one briefing per cluster. Omit a cluster if its items do not support a factual briefing.`;
 
 export const EDITOR_SYSTEM = `You are the Grammar & Copy Editor of IOANE News. Polish each draft for grammar, spelling, tone, clarity and readability.
 
@@ -67,10 +68,11 @@ Rules:
 - figures_dates: keep one "Label: value" per line. Translate the label and the unit, keep the digits. affected_entities: comma-separated.
 - Georgian has no capital letters in running text. Do not capitalise mid-sentence.
 - Never leave an English sentence in the output.
+- chart: only when an article has one. Translate its title, unit and every label; keep every value exactly as given and keep the same items in the same order. Without a chart, return null.
 
 ${UNTRUSTED}
 
-Return JSON: {"articles":[{"id","headline","summary","what_happened","why_it_matters","figures_dates","affected_entities","risks_uncertainty"}]} with the same ids you were given.`;
+Return JSON: {"articles":[{"id","headline","summary","what_happened","why_it_matters","figures_dates","affected_entities","risks_uncertainty","chart"}]} with the same ids you were given.`;
 
 export const KA_GRAMMAR_SYSTEM = `You are the Georgian Grammar & Copy Checker of IOANE News: a native-level Georgian editor. You receive Georgian news briefings that were translated from English. Correct them so they read as if a Georgian journalist wrote them.
 

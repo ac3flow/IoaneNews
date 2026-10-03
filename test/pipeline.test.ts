@@ -4,7 +4,7 @@ import { PIPELINE_ORDER, runPipeline } from '../src/pipeline/run';
 import { selectFeedBatch } from '../src/pipeline/research';
 import { FEEDS } from '../src/registry/sources';
 import type { ArticleRow } from '../src/types';
-import { fakeLlm, insertArticle, makeEnv, rows, rss, stubFeeds } from './helpers';
+import { fakeLlm, insertArticle, kaArticle, makeEnv, rows, rss, stubFeeds } from './helpers';
 
 const NOW = Date.parse('2026-10-03T13:15:00Z');
 const hoursAgo = (h: number) => new Date(NOW - h * 3600_000).toUTCString();
@@ -229,5 +229,75 @@ describe('orchestration', () => {
     expect(seen.size).toBe(FEEDS.length);
     expect([...seen.values()].every((n) => n === 1)).toBe(true);
     expect(selectFeedBatch(FEEDS, 12345, per).length).toBeLessThanOrEqual(per + 1);
+  });
+});
+
+
+describe('optional charts', () => {
+  const feeds = () =>
+    stubFeeds({
+      [FED]: rss([{ title: 'Federal Reserve issues FOMC statement holding rates at 4.25 percent', link: 'https://www.federalreserve.gov/newsevents/pressreleases/monetary20261003a.htm', pub: hoursAgo(2), desc: 'The Committee decided to maintain the target range at 4.25 percent.' }]),
+      [COINDESK]: rss([{ title: 'Bitcoin ETFs record $1.2 billion inflows as price tops $120,000', link: 'https://www.coindesk.com/markets/2026/10/03/bitcoin-etf-inflows', pub: hoursAgo(3) }]),
+      [THEBLOCK]: rss([{ title: 'Bitcoin ETF inflows reach $1.2 billion, price tops $120,000', link: 'https://www.theblock.co/post/1/bitcoin-etf-inflows', pub: hoursAgo(1) }]),
+    });
+  const briefing = (c: any, chart: unknown) => ({
+    cluster_id: c.cluster_id,
+    headline: `Briefing on: ${c.items[0].title}`.slice(0, 150),
+    summary: `Summary of the reporting about ${c.items[0].title}.`.slice(0, 300),
+    what_happened: `According to the sources, ${c.items[0].title}. ${c.items[0].snippet ?? ''}`.trim().padEnd(60, '.'),
+    why_it_matters: 'This could matter for markets and businesses that depend on the outcome.',
+    figures_dates: 'Reported rate: 4.25',
+    affected_entities: 'Markets, Investors',
+    risks_uncertainty: 'Details may change as more information is confirmed.',
+    category: 'Crypto',
+    georgia_related: false,
+    used_item_ids: c.items.map((i: any) => i.id),
+    chart,
+  });
+  const GOOD = { title: 'Bitcoin ETFs', unit: '', items: [{ label: 'Inflows, $ billion', value: 1.2 }, { label: 'Price, $', value: 120000 }] };
+  const INVENTED = { title: 'Invented', unit: '', items: [{ label: 'A', value: 7 }, { label: 'B', value: 9 }] };
+  const KA = (a: any) => ({ ...kaArticle(a), chart: a.chart && { title: 'ბიტკოინ ETF', unit: '', items: a.chart.items.map((i: any) => ({ label: 'ნიშნული', value: i.value })) } });
+
+  it('stores a grounded chart, translates it, and drops an invented one without touching the article', async () => {
+    const env = makeEnv();
+    feeds();
+    const llm = fakeLlm({
+      research: (input) => ({ briefings: input.clusters.map((c: any) => briefing(c, c.items[0].title.includes('Bitcoin') ? GOOD : INVENTED)) }),
+      translate: (input) => ({ articles: input.articles.map(KA) }),
+    });
+    const r = await runPipeline(env, { trigger: 'manual', now: NOW, llm });
+    expect(r.status).toBe('ok');
+
+    const articles = rows<ArticleRow>(env, `SELECT * FROM articles`);
+    expect(articles.map((a) => a.status)).toEqual(['published', 'published']); // the invented chart cost the Fed story nothing
+    const btc = articles.find((a) => a.source_links.includes('coindesk.com'))?.id;
+    const charts = rows<{ article_id: string; lang: string; data: string }>(env, `SELECT * FROM article_charts ORDER BY lang`);
+    expect(charts.map((c) => [c.article_id, c.lang])).toEqual([[btc, 'en'], [btc, 'ka']]);
+    expect(JSON.parse(charts[0]?.data ?? '{}').items.map((i: any) => i.value)).toEqual([1.2, 120000]);
+    expect(JSON.parse(charts[1]?.data ?? '{}').title).toBe('ბიტკოინ ETF');
+    const skipped = rows<{ detail: string }>(env, `SELECT detail FROM pipeline_events WHERE stage = 'research' AND outcome = 'skipped'`);
+    expect(skipped.some((e) => e.detail.includes('chart_not_grounded'))).toBe(true);
+  });
+
+  it('a Georgian chart that changes a value is dropped; the translation itself is still stored', async () => {
+    const env = makeEnv();
+    feeds();
+    const llm = fakeLlm({
+      research: (input) => ({ briefings: input.clusters.map((c: any) => briefing(c, c.items[0].title.includes('Bitcoin') ? GOOD : null)) }),
+      translate: (input) => ({ articles: input.articles.map((a: any) => ({ ...KA(a), chart: a.chart && { title: 'ბიტკოინ ETF', unit: '', items: [{ label: 'ა', value: 1.3 }, { label: 'ბ', value: 120000 }] } })) }),
+    });
+    await runPipeline(env, { trigger: 'manual', now: NOW, llm });
+    expect(rows<{ n: number }>(env, `SELECT COUNT(*) n FROM article_translations WHERE lang = 'ka'`)[0]?.n).toBe(2);
+    expect(rows<{ lang: string }>(env, `SELECT lang FROM article_charts`).map((c) => c.lang)).toEqual(['en']);
+  });
+
+  it('a malformed chart from the model is ignored instead of failing the briefing', async () => {
+    const env = makeEnv();
+    feeds();
+    const llm = fakeLlm({ research: (input) => ({ briefings: input.clusters.map((c: any) => briefing(c, { title: 'x', items: [{ label: 'only one', value: 1 }] })) }) });
+    const r = await runPipeline(env, { trigger: 'manual', now: NOW, llm });
+    expect(r.status).toBe('ok');
+    expect(rows(env, `SELECT 1 FROM articles WHERE status = 'published'`)).toHaveLength(2);
+    expect(rows(env, `SELECT 1 FROM article_charts`)).toHaveLength(0);
   });
 });

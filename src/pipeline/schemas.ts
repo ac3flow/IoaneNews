@@ -20,6 +20,18 @@ const fields = (scale: number) =>
     risks_uncertainty: text(10, Math.round(1200 * scale)),
   });
 
+/**
+ * Optional bar chart: two to six comparable numbers that the sources state, in one unit.
+ * A malformed chart is dropped (`.catch(null)`) rather than sinking the whole briefing.
+ */
+export const ChartData = z.object({
+  title: z.string().trim().min(2).max(90),
+  unit: z.string().trim().max(24).default(''),
+  items: z.array(z.object({ label: z.string().trim().min(1).max(70), value: z.number().finite() })).min(2).max(6),
+});
+export type ChartData = z.infer<typeof ChartData>;
+const optionalChart = ChartData.nullable().optional().catch(null);
+
 export const BriefingFields = fields(1);
 export type BriefingFields = z.infer<typeof BriefingFields>;
 
@@ -34,6 +46,7 @@ export const ResearchOutput = z.object({
         category: z.enum(ARTICLE_CATEGORIES),
         georgia_related: z.boolean(),
         used_item_ids: z.array(z.string()).min(1),
+        chart: optionalChart,
       }),
     )
     .max(10),
@@ -67,7 +80,7 @@ export const FactCheckOutput = z.object({
 export type FactCheckOutput = z.infer<typeof FactCheckOutput>;
 
 export const TranslationOutput = z.object({
-  articles: z.array(GeorgianFields.extend({ id: z.string() })).max(10),
+  articles: z.array(GeorgianFields.extend({ id: z.string(), chart: optionalChart })).max(10),
 });
 export type TranslationOutput = z.infer<typeof TranslationOutput>;
 

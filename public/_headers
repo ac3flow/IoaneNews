@@ -7,5 +7,17 @@
 /app.js
   Cache-Control: public, max-age=300, must-revalidate
 
+/dom.js
+  Cache-Control: public, max-age=300, must-revalidate
+
+/charts.js
+  Cache-Control: public, max-age=300, must-revalidate
+
+/covers.js
+  Cache-Control: public, max-age=300, must-revalidate
+
+/i18n.js
+  Cache-Control: public, max-age=300, must-revalidate
+
 /styles.css
   Cache-Control: public, max-age=300, must-revalidate

@@ -36,9 +36,21 @@ An article drafted at `:01` is published at `:03`. The five expressions in `wran
 - **Translator** writes each verified English briefing in natural Georgian (Latin brand names stay Latin with a hyphenated ending, as in `Google-მა`).
 - **Georgian grammar checker** is a second, independent pass: spelling, case endings (including the narrative case of transitive verbs), verb forms, agreement, singular nouns after numerals, punctuation, English-isms.
 - Both stages are guarded in code, not just by prompt: the **digits must be identical** to the English (formatting may change, digits may not) and the text must **really be Georgian**. A failing result is retried and the article is rejected after 3 failed attempts. An LLM outage never counts against an article.
-- An article is published only after its Georgian version has passed the grammar checker.
+- An article is published only after its Georgian version has passed the grammar checker. The site does not show a "grammar checked" label; the check simply has to pass first.
 - The whole interface is translated (`public/i18n.js`, Georgian by default, English available). Month and weekday names come from tables in the app because some browsers ship no Georgian locale data.
 - `GEMINI_MODEL_KA` lets the two Georgian stages use a stronger model than the rest.
+
+## The site
+
+A news-site layout in green (light and dark): header with search and the EN/ქარ switch, topic navigation, a lead story, ranked lists, topic panels, and a footer. Georgian is the default.
+
+- **Whole stories.** Click any headline to open the full story: what happened, why it matters, key figures and dates, who is affected, risks and uncertainty. Every list row also shows its sources.
+- **Source links.** Each story lists every source it was built from, with the publisher, its kind (official, wire, major press, ...), its credibility weight, and a link that opens the original article in a new tab.
+- **Charts.** The front page has an "In numbers" section (stories per hour over the last 24 hours, stories per topic, trust-score spread, kinds of sources). Each story page has a visual summary: key-number tiles from its figures, a bar chart when the sources state two or more comparable numbers, the trust-score breakdown, and a timeline of when each source reported.
+- **Search by time.** The time field is `<input type="time" step="300">`: pick a day and a 5-minute slot (Tbilisi time), or only a slot to match any day.
+- **Text search.** `/` (or the magnifier) searches headlines and summaries in the current language.
+
+The bar chart is optional and checked in code: the Research agent proposes it, and it is stored only if every value, and every number inside a label or title, appears in the cited items or the draft. The Translator carries it into Georgian, and the Georgian chart is kept only if its values and digits are identical. A chart that fails a check is dropped; the story itself is never rejected for it. Stories published before charts existed have no bar chart (they still get the tiles, score breakdown and timeline).
 
 ## Configuration
 
@@ -90,8 +102,9 @@ The registry holds all 13 categories from the brief. Only sources with a working
 
 | Endpoint | |
 |---|---|
-| `GET /api/articles?lang=&tab=&date=&time=&limit=&before=` | `lang`: `en` (default) or `ka`. In `ka`, only stories whose Georgian version passed the grammar checker are listed, with the Georgian text. `tab`: `top10`, `all`, `georgia`, `ai-tech`, `economics`, `crypto`, `marketing`, `real-estate`, `global-trade`, `vc-startups`. `top10` is `trust_score DESC LIMIT 10`. `time=HH:MM` matches the 5-minute slot `[HH:MM, HH:MM+5)` in Asia/Tbilisi, on any day, or on `date=YYYY-MM-DD` if given. Timestamps in the response are UTC. |
-| `GET /api/articles/:id?lang=` | One story plus its trust breakdown. |
+| `GET /api/articles?lang=&tab=&date=&time=&q=&limit=&before=` | `lang`: `en` (default) or `ka`. In `ka`, only stories whose Georgian version passed the grammar checker are listed, with the Georgian text. `tab`: `top10`, `all`, `georgia`, `ai-tech`, `economics`, `crypto`, `marketing`, `real-estate`, `global-trade`, `vc-startups`. `top10` is `trust_score DESC LIMIT 10`. `time=HH:MM` matches the 5-minute slot `[HH:MM, HH:MM+5)` in Asia/Tbilisi, on any day, or on `date=YYYY-MM-DD` if given. `q` (2+ characters) searches headline and summary (the Georgian text for `lang=ka`). Each source has `tier`: `primary`, `wire`, `major`, `specialist`, `commentary`, `unclassified` or `social`. Timestamps in the response are UTC. |
+| `GET /api/articles/:id?lang=` | One story plus its trust breakdown, its optional `chart` (`{title, unit, items:[{label, value}]}`) and a `timeline` of the cited items (`{name, url, at}`, oldest first). |
+| `GET /api/stats` | Numbers for the front-page charts: `perHour` (24 buckets), `byCategory`, `trustSpread`, `sourceTiers`, `avgTrust`. |
 | `GET /api/slots?date=&tab=` | Stories per 5-minute slot (feeds the tape in the UI). |
 | `GET /api/meta` | Tabs, counts, next cron slot, last run. |
 | `GET /api/status` | Health: last run, queue sizes, feed errors in 24h. No secrets. |
@@ -101,7 +114,7 @@ All stored timestamps are UTC ISO-8601. The browser renders them in `Asia/Tbilis
 
 ## Database
 
-`schema.sql` holds the `articles` table exactly as specified, plus operational tables: `article_translations` (the Georgian text, one row per article and language), `feed_items` (the rolling pool of collected items), `pipeline_runs` (also the run lock, one live run per scope) and `pipeline_events` (audit trail). The Worker creates these tables itself on first use (`src/db-init.ts`, generated from `schema.sql` by `npm run build`), so a fresh database needs no setup. It is safe to re-run. If a different `articles` table already exists in the target database, `CREATE TABLE IF NOT EXISTS` will not change it, so use a fresh database.
+`schema.sql` holds the `articles` table exactly as specified, plus operational tables: `article_translations` (the Georgian text, one row per article and language), `article_charts` (the optional bar chart, one row per article and language), `feed_items` (the rolling pool of collected items), `pipeline_runs` (also the run lock, one live run per scope) and `pipeline_events` (audit trail). The Worker creates these tables itself on first use (`src/db-init.ts`, generated from `schema.sql` by `npm run build`), so a fresh database needs no setup. It is safe to re-run. If a different `articles` table already exists in the target database, `CREATE TABLE IF NOT EXISTS` will not change it, so use a fresh database.
 
 Articles, translations and feed items are never deleted. Run and event logs older than 30 days are trimmed daily. Drafts not published within 24 hours are rejected as stale.
 

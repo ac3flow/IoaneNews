@@ -22,7 +22,7 @@ describe('UI translations', () => {
   });
 
   it('every Georgian string is Georgian (apart from the brand name)', () => {
-    const latinOk = new Set(['docTitle']);
+    const latinOk = new Set(['docTitle', 'footCopy']);
     for (const [k, v] of Object.entries(ka)) {
       if (latinOk.has(k)) continue;
       if (!v.replace(/\{\w+\}/g, '').match(/\p{L}/u)) continue; // pure template, e.g. '{count} · {tab}'
@@ -44,7 +44,12 @@ describe('UI translations', () => {
     // keys built at runtime
     for (const tab of TABS) expect(ka, `tab.${tab.id}`).toHaveProperty(`tab.${tab.id}`);
     for (const c of ARTICLE_CATEGORIES) expect(ka, `cat.${c}`).toHaveProperty(`cat.${c}`);
-    for (const k of ['credibility', 'corroboration', 'primaryEvidence', 'claimSupport']) expect(ka).toHaveProperty(`bd.${k}`);
+    for (const k of ['credibility', 'corroboration', 'primaryEvidence', 'claimSupport', 'penalties']) expect(ka).toHaveProperty(`bd.${k}`);
+    for (const k of ['top10', 'all', 'georgia']) expect(ka).toHaveProperty(`tabNote.${k}`);
+    for (const k of ['Research', 'Editor', 'Fact', 'Translator']) {
+      expect(ka).toHaveProperty(`how${k}`);
+      expect(ka).toHaveProperty(`how${k}Label`);
+    }
     for (const k of ['primary', 'wire', 'major', 'specialist', 'commentary', 'unclassified', 'social']) expect(ka).toHaveProperty(`tier.${k}`);
   });
 
@@ -54,11 +59,18 @@ describe('UI translations', () => {
       expect(norm(entities(m[3] as string)), m[2]).toBe(norm(ka[m[2] as string] as string));
       checked++;
     }
-    expect(checked).toBeGreaterThan(20);
+    expect(checked).toBeGreaterThanOrEqual(2); // the skip link and the no-JavaScript message
     for (const m of indexHtml.matchAll(/data-i18n-aria="([^"]+)"[^>]*aria-label="([^"]*)"/g)) expect(m[2], m[1]).toBe(ka[m[1] as string]);
     expect(indexHtml).toContain('<html lang="ka">');
     expect(indexHtml).toContain(`<title>${ka.docTitle}</title>`);
     expect(indexHtml).toContain(`content="${ka.docDesc}"`);
+  });
+
+  it('never shows a "grammar checked" label, in either language', () => {
+    const all = JSON.stringify(DICT) + indexHtml + appJs;
+    expect(all).not.toContain('გრამატიკა შემოწმებულია');
+    expect(all.toLowerCase()).not.toContain('grammar checked');
+    expect(all).not.toContain('kaChecked');
   });
 
   it('translates with placeholders, falls back to English, then to the key', () => {

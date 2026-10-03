@@ -9,11 +9,12 @@
 import { nowIso } from '../time';
 import type { ArticleRow } from '../types';
 import { MAX_ATTEMPTS, attemptCounts, logEvent, type StageCtx } from './context';
+import { groundTranslatedChart } from './chart';
 import { looksGeorgian } from './georgian';
 import { digitsPreserved } from './numbers';
 import { TRANSLATOR_SYSTEM } from './prompts';
 import { rejectStatement } from './publish';
-import { TranslationOutput } from './schemas';
+import { ChartData, TranslationOutput } from './schemas';
 
 const FIELDS = ['headline', 'summary', 'what_happened', 'why_it_matters', 'figures_dates', 'affected_entities', 'risks_uncertainty'] as const;
 const joined = (o: Record<(typeof FIELDS)[number], string | null | undefined>): string => FIELDS.map((f) => o[f] ?? '').join('\n');
@@ -46,9 +47,21 @@ export async function translateStage(ctx: StageCtx): Promise<Record<string, unkn
   let translated = 0;
   let retry = 0;
   if (live.length) {
+    // English charts (written by Research) travel with their articles to be translated.
+    const { results: chartRows } = await env.DB.prepare(`SELECT article_id, data FROM article_charts WHERE lang = 'en' AND article_id IN (SELECT value FROM json_each(?1))`)
+      .bind(JSON.stringify(live.map((a) => a.id)))
+      .all<{ article_id: string; data: string }>();
+    const charts = new Map<string, ChartData>();
+    for (const r of chartRows) {
+      try {
+        charts.set(r.article_id, ChartData.parse(JSON.parse(r.data)));
+      } catch {
+        /* a chart that no longer parses is simply not shown */
+      }
+    }
     const out = await ctx.llm.json({
       system: TRANSLATOR_SYSTEM,
-      user: JSON.stringify({ articles: live.map((a) => ({ id: a.id, headline: a.headline, summary: a.summary, what_happened: a.what_happened, why_it_matters: a.why_it_matters, figures_dates: a.figures_dates ?? '', affected_entities: a.affected_entities ?? '', risks_uncertainty: a.risks_uncertainty ?? '' })) }),
+      user: JSON.stringify({ articles: live.map((a) => ({ id: a.id, headline: a.headline, summary: a.summary, what_happened: a.what_happened, why_it_matters: a.why_it_matters, figures_dates: a.figures_dates ?? '', affected_entities: a.affected_entities ?? '', risks_uncertainty: a.risks_uncertainty ?? '', chart: charts.get(a.id) ?? null })) }),
       schema: TranslationOutput,
       label: 'translate',
       model: env.GEMINI_MODEL_KA,
@@ -70,7 +83,11 @@ export async function translateStage(ctx: StageCtx): Promise<Record<string, unkn
            VALUES (?1, 'ka', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?9)`,
         ).bind(a.id, t.headline, t.summary, t.what_happened, t.why_it_matters, t.figures_dates, t.affected_entities, t.risks_uncertainty, ts),
       );
-      logEvent(ctx, { articleId: a.id, stage: 'translate', outcome: 'ok' });
+      // The chart is a bonus: a bad Georgian chart is dropped, never a reason to retry or reject the article.
+      const enChart = charts.get(a.id);
+      const kaChart = enChart ? groundTranslatedChart(enChart, t.chart) : null;
+      if (kaChart) statements.push(env.DB.prepare(`INSERT OR IGNORE INTO article_charts (article_id, lang, data, created_at) VALUES (?1, 'ka', ?2, ?3)`).bind(a.id, JSON.stringify(kaChart), ts));
+      logEvent(ctx, { articleId: a.id, stage: 'translate', outcome: 'ok', detail: enChart ? { chart: !!kaChart } : undefined });
       translated++;
     }
   }

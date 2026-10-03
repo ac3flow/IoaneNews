@@ -9,7 +9,7 @@ import { createD1 } from './d1';
 const tables = (db: ReturnType<typeof createD1>) =>
   (db.raw.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as { name: string }[]).map((r) => r.name);
 
-const EXPECTED = ['article_translations', 'articles', 'feed_items', 'pipeline_events', 'pipeline_runs'];
+const EXPECTED = ['article_charts', 'article_translations', 'articles', 'feed_items', 'pipeline_events', 'pipeline_runs'];
 const envWith = (DB: unknown): Env => ({ DB, ASSETS: {} as Fetcher }) as Env;
 
 describe('self-initialising schema', () => {

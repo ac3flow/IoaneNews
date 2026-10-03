@@ -3,115 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#020617">
+<meta name="theme-color" content="#065f46">
 <title>IOANE News</title>
 <meta name="description" content="ბიზნესი, ტექნოლოგიები და საქართველო: სიახლეები, რომლებსაც ყოველ ხუთ წუთში ვიკვლევთ, ვასწორებთ და ფაქტებს ვამოწმებთ. თითოეულ სიახლეს აქვს სანდოობის ქულა და წყაროები.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,500..800&family=Geist+Mono:wght@400..600&family=Instrument+Sans:wght@400..600&family=Noto+Sans+Georgian:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
-</head>
-<body class="min-h-dvh bg-slate-950 font-sans text-slate-200 antialiased">
-<a href="#feed" data-i18n="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-emerald-500 focus:px-3 focus:py-2 focus:font-semibold focus:text-slate-950">გადასვლა სიახლეებზე</a>
-
-<header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur">
-  <div class="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
-    <a href="/" class="flex items-center gap-2.5" data-i18n-aria="brandAria" aria-label="IOANE News, მთავარი გვერდი">
-      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" class="fill-emerald-500"/><rect x="7" y="15" width="2.6" height="10" rx="1.3" class="fill-slate-950"/><rect x="11.4" y="11" width="2.6" height="14" rx="1.3" class="fill-slate-950"/><rect x="15.8" y="7" width="2.6" height="18" rx="1.3" class="fill-slate-950"/><rect x="20.2" y="12" width="2.6" height="13" rx="1.3" class="fill-amber-500"/></svg>
-      <span class="display text-lg font-bold tracking-tight text-white">IOANE <span class="font-medium text-emerald-400">News</span></span>
-    </a>
-    <div id="langs" role="group" data-i18n-aria="langAria" aria-label="ენა" class="flex rounded-lg border border-slate-800 p-0.5 text-sm font-semibold">
-      <button type="button" data-lang="ka" aria-pressed="true" class="lang">ქართ</button>
-      <button type="button" data-lang="en" aria-pressed="false" class="lang">EN</button>
-    </div>
-  </div>
-</header>
-
-<main class="mx-auto max-w-3xl px-4 pb-24">
-  <section class="pt-8 sm:pt-12" aria-labelledby="h1">
-    <p id="live" class="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 font-mono text-xs text-slate-400" role="status" aria-live="polite">
-      <span id="live-dot" class="size-2 rounded-full bg-slate-600"></span>
-      <span id="live-text" data-i18n="liveConnecting">მიმდინარეობს დაკავშირება…</span>
-    </p>
-    <h1 id="h1" class="display mt-4 text-balance text-4xl font-extrabold leading-[1.08] text-white sm:text-5xl">
-      <span data-i18n="h1a">გადამოწმებული წუთებში,</span> <span class="text-emerald-400" data-i18n="h1b">არა საათებში.</span>
-    </h1>
-    <p class="mt-4 max-w-xl text-pretty text-base leading-relaxed text-slate-400" data-i18n="intro">ყველა სიახლეს ხუთწუთიანი ციკლით ვიკვლევთ, ვასწორებთ და ფაქტებს ვამოწმებთ. არაფერი ქვეყნდება ორი დამოუკიდებელი ან ერთი პირველადი წყაროს გარეშე. ქართულ ტექსტს გამოქვეყნებამდე ცალკე გრამატიკული შემოწმებაც გადის.</p>
-
-    <div class="mt-8 rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4 sm:p-5">
-      <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-        <div>
-          <p class="eyebrow" data-i18n="tape">ლენტი</p>
-          <p id="tape-title" class="display mt-1 text-lg font-semibold text-white"></p>
-        </div>
-        <form id="when" class="flex flex-wrap items-end gap-2" autocomplete="off">
-          <label class="grid gap-1">
-            <span class="eyebrow" data-i18n="day">დღე</span>
-            <input id="date" name="date" type="date" class="field w-[9.25rem]" aria-describedby="when-hint">
-          </label>
-          <label class="grid gap-1">
-            <span class="eyebrow" data-i18n="slot">დროის სლოტი</span>
-            <input id="time" name="time" type="time" step="300" class="field w-[8.75rem]" aria-describedby="when-hint">
-          </label>
-          <button id="clear" type="button" class="btn btn-ghost" data-i18n="clear" hidden>ფილტრების გასუფთავება</button>
-        </form>
-      </div>
-
-      <div class="relative mt-8">
-        <canvas id="tape" class="block h-14 w-full touch-pan-y cursor-crosshair rounded-lg" tabindex="0" role="slider" data-i18n-aria="tapeAria" aria-label="აირჩიეთ 5-წუთიანი სლოტი" aria-valuemin="0" aria-valuemax="1435" aria-valuetext="სლოტი არ არის არჩეული"></canvas>
-        <div id="tape-tip" class="pointer-events-none absolute -top-8 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[11px] text-slate-100 shadow-lg"></div>
-      </div>
-      <div class="mt-1.5 flex justify-between font-mono text-[10px] text-slate-500" aria-hidden="true">
-        <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
-      </div>
-      <p id="when-hint" class="mt-3 text-xs leading-relaxed text-slate-500" data-i18n="tapeHint">თითოეული ხაზი ერთი 5-წუთიანი ციკლია; განათებული ხაზები გამოქვეყნებულ სიახლეებს აჩვენებს. დააწკაპუნეთ ლენტზე ან გადაათრიეთ, გამოიყენეთ ისრები ან ჩაწერეთ დრო. დრო ყველგან თბილისისაა (GMT+4).</p>
-    </div>
-  </section>
-
-  <nav id="tabs" data-i18n-aria="tabsAria" aria-label="კატეგორიები" class="sticky top-14 z-30 -mx-4 mt-6 border-b border-slate-800/80 bg-slate-950/90 px-4 py-2.5 backdrop-blur">
-    <div id="tabs-row" class="fade-x flex gap-1 overflow-x-auto [scrollbar-width:none]"></div>
-  </nav>
-
-  <div class="mt-5 flex min-h-6 items-center justify-between gap-3">
-    <p id="result" class="font-mono text-xs text-slate-500" role="status" aria-live="polite"></p>
-  </div>
-
-  <div id="newbar" class="mt-3" hidden>
-    <button id="newbtn" type="button" class="btn btn-primary w-full" data-i18n="newBtn">ახალი გადამოწმებული სიახლეებია. აჩვენე</button>
-  </div>
-
-  <ol id="feed" class="mt-4 grid gap-4" aria-busy="true"></ol>
-
-  <div id="more" class="mt-6 flex justify-center" hidden>
-    <button id="morebtn" type="button" class="btn btn-ghost" data-i18n="more">მეტი სიახლის ჩატვირთვა</button>
-  </div>
-
-  <details class="mt-14 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 text-sm text-slate-400">
-    <summary class="cursor-pointer select-none font-semibold text-slate-200" data-i18n="howSummary">როგორ მოწმდება და ფასდება სიახლეები</summary>
-    <div class="mt-4 grid gap-4 leading-relaxed">
-      <ul class="grid gap-2">
-        <li><strong class="text-slate-200" data-i18n="howResearchLabel">მკვლევარი აგენტი</strong> <span data-i18n="howResearch">აგროვებს მასალას საინფორმაციო სააგენტოებიდან, რეგულატორებიდან, ცენტრალური ბანკებიდან, სტატისტიკის სამსახურებიდან და პროფილური გამოცემებიდან.</span></li>
-        <li><strong class="text-slate-200" data-i18n="howEditorLabel">რედაქტორი</strong> <span data-i18n="howEditor">ასწორებს ინგლისურ ტექსტს სტილისა და სიცხადის მხრივ, ერთი ციფრის შეცვლის გარეშე.</span></li>
-        <li><strong class="text-slate-200" data-i18n="howFactLabel">ფაქტების შემმოწმებელი</strong> <span data-i18n="howFact">წყაროების მიხედვით სიახლეს 0-დან 100-მდე აფასებს.</span></li>
-        <li><strong class="text-slate-200" data-i18n="howTranslatorLabel">ქართული თარჯიმანი</strong> <span data-i18n="howTranslator">სიახლეს ბუნებრივ ქართულად წერს და ყველა მაჩვენებელს ზუსტად ინარჩუნებს.</span></li>
-        <li><strong class="text-slate-200" data-i18n="howKaLabel">ქართული გრამატიკის შემმოწმებელი</strong> <span data-i18n="howKa">ასწორებს ბრუნვებს, ზმნის ფორმებს და სტილს, სანამ სიახლე გამოქვეყნდება.</span></li>
-      </ul>
-      <dl class="grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
-        <dt class="font-mono text-amber-300">5.0</dt><dd data-i18n="w5">პირველადი და ოფიციალური: ცენტრალური ბანკები, სტატისტიკის სამსახურები, რეგულატორები, სამინისტროები, სამეცნიერო ჟურნალები</dd>
-        <dt class="font-mono text-amber-300">4.5</dt><dd data-i18n="w45">საინფორმაციო სააგენტოები: Reuters, Associated Press</dd>
-        <dt class="font-mono text-amber-300">4.0</dt><dd data-i18n="w4">წამყვანი ფინანსური გამოცემები</dd>
-        <dt class="font-mono text-amber-300">3.5</dt><dd data-i18n="w35">პროფილური და ტექნოლოგიური გამოცემები, კომპანიების პრესცენტრები</dd>
-        <dt class="font-mono text-amber-300">2.5–3.0</dt><dd data-i18n="w25">კომენტარები და ბიულეტენები</dd>
-        <dt class="font-mono text-amber-300">1.0–2.0</dt><dd data-i18n="w1">სოციალური სიგნალები: გამოიყენება სიახლის აღმოსაჩენად და არასოდეს დასადასტურებლად</dd>
-      </dl>
-      <p data-i18n="howGates">სიახლე ქვეყნდება მხოლოდ მაშინ, როცა მას აქვს ორი დამოუკიდებელი ან ერთი პირველადი წყარო, არცერთი მტკიცება არ ეწინააღმდეგება წყაროებს, მტკიცებების მინიმუმ 70% დადასტურებულია და ქულა 60 ან მეტია. გახსენით ნებისმიერი სიახლე და ნახავთ, როგორ ჩამოყალიბდა მისი ქულა.</p>
-    </div>
-  </details>
-</main>
-
-<footer class="border-t border-slate-800/80 py-8 text-center font-mono text-[11px] text-slate-600" data-i18n="footer">დრო ნაჩვენებია Asia/Tbilisi (GMT+4) ზონაში. ინახება UTC-ში.</footer>
-
 <script type="module" src="/app.js"></script>
+</head>
+<body>
+<a class="skip" id="skip" href="#main" data-i18n="skip">გადასვლა სიახლეებზე</a>
+<header class="hdr" id="hdr"></header>
+<main id="main" tabindex="-1"></main>
+<footer class="foot" id="foot"></footer>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="ძიება">
+  <div class="modal-box">
+    <div class="modal-in">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="ძიება ამბებში…" aria-label="ძიება">
+      <button type="button" id="modal-close">დახურვა</button>
+    </div>
+    <div class="modal-res" id="res" aria-live="polite"></div>
+  </div>
+</div>
+<noscript><p class="shell" data-i18n="noscript">სიახლეების სანახავად ჩართეთ JavaScript.</p></noscript>
 </body>
 </html>

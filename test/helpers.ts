@@ -61,7 +61,7 @@ const digitsOf = (s: string): string => (s.match(/\d+(?:[.,]\d+)*/g) ?? []).join
 export const kaText = (src: string): string => `${KA.repeat(Math.max(3, Math.ceil(src.length / 14)))}${digitsOf(src)}`.trim();
 export const kaFigures = (src: string): string =>
   (src ?? '').split('\n').filter(Boolean).map((l) => `ლეიბლი: ${digitsOf(l) || 'მნიშვნელობა'}`).join('\n');
-const kaArticle = (a: any) => ({
+export const kaArticle = (a: any) => ({
   id: a.id,
   headline: kaText(a.headline),
   summary: kaText(a.summary),
