@@ -1,0 +1,29 @@
+{
+  "name": "ioane-news",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IOANE News: multi-agent verified news pipeline (Cloudflare Worker + D1)",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "build:css": "tailwindcss -i ./src/ui/input.css -o ./public/styles.css --minify",
+    "watch:css": "tailwindcss -i ./src/ui/input.css -o ./public/styles.css --watch",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute ioane-news --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute ioane-news --remote --file=./schema.sql",
+    "db:seed": "wrangler d1 execute ioane-news --local --file=./seed.sql",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261003.1",
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
+  }
+}

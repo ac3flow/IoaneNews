@@ -1,0 +1,57 @@
+{
+  "name": "ioane-news",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+
+  // Static UI lives in ./public. The Worker only runs for /api/* (and cron).
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Regenerate the Tailwind stylesheet on every `wrangler dev` / `wrangler deploy`.
+  "build": { "command": "npm run build:css" },
+
+  // WORKERS FREE (default): five triggers, one minute apart, each running one slice of the pipeline,
+  // so every invocation gets its own CPU / subrequest / D1-query budget.
+  //   :00 collect (poll sources)        :01 research + edit          :02 fact-check + translate (KA)
+  //   :03 Georgian grammar + publish    :04 collect (next sources)
+  // An article drafted at :01 is published at :03. These five expressions must match STAGED_CRONS
+  // in src/pipeline/run.ts. Free accounts allow 5 cron triggers in total, so turn off the crons on
+  // the old ioane-agent and ioane-agent-2 Workers first.
+  //
+  // WORKERS PAID: use one trigger instead and set PIPELINE_MODE to "single" and FEEDS_PER_RUN to "80"
+  // so every source is searched every 5 minutes:
+  //   "triggers": { "crons": ["*/5 * * * *"] }
+  "triggers": {
+    "crons": ["*/5 * * * *", "1-59/5 * * * *", "2-59/5 * * * *", "3-59/5 * * * *", "4-59/5 * * * *"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ioane-news",
+      // Create it once:  npx wrangler d1 create ioane-news   then paste the id here.
+      "database_id": "PASTE_YOUR_D1_ID_HERE"
+    }
+  ],
+
+  "vars": {
+    // Same variable names agent 2 already uses. Change if Google retires the model name.
+    "GEMINI_MODEL": "gemini-2.5-flash",
+    // Optional: a stronger model for the two Georgian stages (translate + Georgian grammar check).
+    // Georgian quality is noticeably better on larger models. Uncomment to use it:
+    // "GEMINI_MODEL_KA": "gemini-2.5-pro",
+
+    "PIPELINE_MODE": "staged",    // "staged" (Free) or "single" (Paid)
+    "FEEDS_PER_RUN": "30",        // sources per collect: 30 -> 25 per collect, all 75 covered every 15 minutes
+    "MAX_ARTICLES_PER_RUN": "3",  // new drafts per run, and the batch size of every later stage
+    "PUBLISH_THRESHOLD": "60"     // minimum trust score (0-100) to publish
+  }
+
+  // Secrets (set with `wrangler secret put`, never put them in this file):
+  //   GEMINI_API_KEY   - same key agent 2 uses
+  //   ADMIN_KEY        - enables POST /api/run (manual pipeline trigger)
+}
