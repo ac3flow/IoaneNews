@@ -13,6 +13,8 @@ export interface JsonRequest<T> {
   schema: ZodType<T>;
   /** For logs and errors only. */
   label: string;
+  /** Overrides GEMINI_MODEL for this call (used by the Georgian stages). */
+  model?: string;
 }
 
 export interface Llm {
@@ -42,12 +44,12 @@ export function createLlm(env: Env, fetchImpl: typeof fetch = fetch): Llm | null
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const base = (env.GEMINI_BASE_URL || DEFAULT_BASE).replace(/\/+$/, '');
 
-  async function call(system: string, contents: Turn[]): Promise<string> {
+  async function call(system: string, contents: Turn[], modelOverride?: string): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
       try {
-        const res = await fetchImpl(`${base}/models/${model}:generateContent`, {
+        const res = await fetchImpl(`${base}/models/${modelOverride || model}:generateContent`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey as string },
           body: JSON.stringify({
@@ -78,11 +80,11 @@ export function createLlm(env: Env, fetchImpl: typeof fetch = fetch): Llm | null
   }
 
   return {
-    async json<T>({ system, user, schema, label }: JsonRequest<T>): Promise<T> {
+    async json<T>({ system, user, schema, label, model: modelOverride }: JsonRequest<T>): Promise<T> {
       const contents: Turn[] = [{ role: 'user', parts: [{ text: user }] }];
       let problem = '';
       for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await call(system, contents);
+        const raw = await call(system, contents, modelOverride);
         const parsed = parseJson(raw);
         if (parsed.ok) {
           const checked = schema.safeParse(parsed.value);

@@ -6,6 +6,7 @@ export interface PipelineConfig {
   feedsPerRun: number;
   maxArticlesPerRun: number;
   publishThreshold: number;
+  mode: 'staged' | 'single';
 }
 
 const int = (v: string | undefined, dflt: number, min: number, max: number): number => {
@@ -18,10 +19,11 @@ export function readConfig(env: Env): PipelineConfig {
     feedsPerRun: int(env.FEEDS_PER_RUN, 10, 1, 100),
     maxArticlesPerRun: int(env.MAX_ARTICLES_PER_RUN, 3, 1, 10),
     publishThreshold: int(env.PUBLISH_THRESHOLD, 60, 0, 100),
+    mode: env.PIPELINE_MODE === 'single' ? 'single' : 'staged',
   };
 }
 
-export type Stage = 'research' | 'edit' | 'fact_check' | 'publish' | 'feed';
+export type Stage = 'collect' | 'research' | 'edit' | 'fact_check' | 'translate' | 'ka_grammar' | 'publish' | 'feed';
 export type Outcome = 'ok' | 'rejected' | 'error' | 'skipped';
 
 export interface PipelineEvent {

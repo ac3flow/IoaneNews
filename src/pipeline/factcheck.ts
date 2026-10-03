@@ -1,21 +1,19 @@
 // Fact-Checker Agent: trust score (0–100) from source credibility, double-sourcing and
 // primary evidence (deterministic, see scoring.ts) plus an LLM claim check against the
-// source excerpts. Publishes or rejects. Without the LLM nothing is published, because
-// an unchecked article must never reach readers.
+// source excerpts. Verifies (score recorded; the article then goes to translation) or rejects.
+// Without the LLM nothing advances, because an unchecked article must never reach readers.
 
 import type { ArticleRow, FeedItemRow } from '../types';
 import { citationsFromLinks, parseLinks } from './citations';
 import { MAX_ATTEMPTS, attemptCounts, logEvent, type StageCtx } from './context';
 import { FACTCHECK_SYSTEM } from './prompts';
-import { publishStatement, rejectStatement } from './publish';
+import { rejectStatement, verifyStatement } from './publish';
 import { FactCheckOutput } from './schemas';
 import { scoreArticle } from './scoring';
 
-const BATCH = 5;
-
 export async function factCheckStage(ctx: StageCtx): Promise<Record<string, unknown>> {
   const { env, now, cfg } = ctx;
-  const { results: queue } = await env.DB.prepare(`SELECT * FROM articles WHERE status = 'edited' ORDER BY created_at ASC LIMIT ?1`).bind(BATCH).all<ArticleRow>();
+  const { results: queue } = await env.DB.prepare(`SELECT * FROM articles WHERE status = 'edited' AND fact_checked = 0 ORDER BY created_at ASC LIMIT ?1`).bind(cfg.maxArticlesPerRun).all<ArticleRow>();
   if (queue.length === 0) return { skipped: 'nothing to check' };
   if (!ctx.llm) return { skipped: 'GEMINI_API_KEY not configured', queued: queue.length };
 
@@ -31,7 +29,7 @@ export async function factCheckStage(ctx: StageCtx): Promise<Record<string, unkn
     } else live.push(a);
   }
 
-  let published = 0;
+  let verified = 0;
   let retry = 0;
   if (live.length) {
     const { results: items } = await env.DB.prepare(`SELECT url, title, snippet, source_name FROM feed_items WHERE article_id IN (SELECT value FROM json_each(?1))`)
@@ -89,9 +87,9 @@ export async function factCheckStage(ctx: StageCtx): Promise<Record<string, unkn
         flagged: res.claims.filter((c) => c.verdict !== 'supported').slice(0, 8),
       };
       if (r.decision === 'publish') {
-        statements.push(publishStatement(env, a.id, r.score, now));
+        statements.push(verifyStatement(env, a.id, r.score, now));
         logEvent(ctx, { articleId: a.id, stage: 'fact_check', outcome: 'ok', detail });
-        published++;
+        verified++;
       } else {
         statements.push(rejectStatement(env, a.id, now, { trustScore: r.score, factChecked: true }));
         logEvent(ctx, { articleId: a.id, stage: 'fact_check', outcome: 'rejected', detail });
@@ -101,5 +99,5 @@ export async function factCheckStage(ctx: StageCtx): Promise<Record<string, unkn
   }
 
   if (statements.length) await env.DB.batch(statements);
-  return { published, rejected, retry };
+  return { verified, rejected, retry };
 }

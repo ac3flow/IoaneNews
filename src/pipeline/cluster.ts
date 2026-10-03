@@ -46,11 +46,27 @@ export function clusterItems<T extends ClusterInput>(items: T[]): T[][] {
     }
     return i;
   };
-  for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
-      if (sameEvent(toks[i] as Set<string>, toks[j] as Set<string>)) parent[find(j)] = find(i);
+
+  // Inverted index: only compare items that share a token. Same rule as sameEvent(), far fewer pairs
+  // (this runs inside a 10 ms CPU budget on Workers Free).
+  const index = new Map<string, number[]>();
+  for (let j = 0; j < items.length; j++) {
+    const tj = toks[j] as Set<string>;
+    const shared = new Map<number, number>();
+    for (const t of tj) {
+      const seen = index.get(t);
+      if (seen) for (const i of seen) shared.set(i, (shared.get(i) ?? 0) + 1);
+    }
+    for (const [i, n] of shared) {
+      if (n >= 3 && n / Math.min(tj.size, (toks[i] as Set<string>).size) >= 0.4) parent[find(j)] = find(i);
+    }
+    for (const t of tj) {
+      const list = index.get(t);
+      if (list) list.push(j);
+      else index.set(t, [j]);
     }
   }
+
   const groups = new Map<number, T[]>();
   items.forEach((item, i) => {
     const r = find(i);

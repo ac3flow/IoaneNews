@@ -1,6 +1,6 @@
 import { TIER_LABEL, tierOf } from './registry/sources';
 import { resolveSource } from './registry/trust';
-import { STAGE_ORDER, runPipeline, type StageName } from './pipeline/run';
+import { PIPELINE_ORDER, STAGE_NAMES, runPipeline, type StageName } from './pipeline/run';
 import { parseLinks } from './pipeline/citations';
 import { SLOT_MS, TIMEZONE, dayRangeUtc, formatSlot, isDate, nextSlot, nowIso, parseSlotMinute, slotRangeUtc, tbilisiDate } from './time';
 import { ARTICLE_CATEGORIES, type ArticleRow, type Env } from './types';
@@ -35,7 +35,23 @@ function json(data: unknown, status = 200, cache = 'no-store'): Response {
 const fail = (status: number, error: string): Response => json({ error }, status);
 
 // ─── shaping ────────────────────────────────────────────────────────────────
+export const LANGS = ['en', 'ka'] as const;
+export type Lang = (typeof LANGS)[number];
+
+/** Georgian columns joined in from article_translations (present only for lang=ka queries). */
+interface KaColumns {
+  k_headline?: string | null;
+  k_summary?: string | null;
+  k_what_happened?: string | null;
+  k_why_it_matters?: string | null;
+  k_figures_dates?: string | null;
+  k_affected_entities?: string | null;
+  k_risks_uncertainty?: string | null;
+}
+type Row = ArticleRow & KaColumns;
+
 export interface ArticleDto {
+  lang: Lang;
   id: string;
   headline: string;
   summary: string;
@@ -66,16 +82,30 @@ export function parseFigures(s: string | null): { label: string; value: string }
     });
 }
 
-export function toDto(r: ArticleRow, rank?: number): ArticleDto {
+export function toDto(r: Row, rank?: number, lang: Lang = 'en'): ArticleDto {
+  // For lang=ka the joined translation replaces the English text; everything else is shared.
+  const ka = lang === 'ka' && r.k_headline != null;
+  const v = ka
+    ? {
+        headline: r.k_headline ?? r.headline,
+        summary: r.k_summary ?? r.summary,
+        what_happened: r.k_what_happened ?? r.what_happened,
+        why_it_matters: r.k_why_it_matters ?? r.why_it_matters,
+        figures_dates: r.k_figures_dates ?? null,
+        affected_entities: r.k_affected_entities ?? null,
+        risks_uncertainty: r.k_risks_uncertainty ?? '',
+      }
+    : r;
   const dto: ArticleDto = {
+    lang: ka ? 'ka' : 'en',
     id: r.id,
-    headline: r.headline,
-    summary: r.summary,
-    what_happened: r.what_happened,
-    why_it_matters: r.why_it_matters,
-    figures: parseFigures(r.figures_dates),
-    affected_entities: (r.affected_entities ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-    risks_uncertainty: r.risks_uncertainty ?? '',
+    headline: v.headline,
+    summary: v.summary,
+    what_happened: v.what_happened,
+    why_it_matters: v.why_it_matters,
+    figures: parseFigures(v.figures_dates),
+    affected_entities: (v.affected_entities ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    risks_uncertainty: v.risks_uncertainty ?? '',
     category: r.category,
     georgia_related: !!r.georgia_related,
     // Only http(s) links ever leave the API, whatever is stored.
@@ -87,7 +117,8 @@ export function toDto(r: ArticleRow, rank?: number): ArticleDto {
         tier: TIER_LABEL[tierOf(l.trust_score, l.trust_score < 2)],
       })),
     trust_score: r.trust_score,
-    grammar_checked: !!r.grammar_checked,
+    // For Georgian, "grammar checked" means the Georgian Grammar Checker has passed (the join requires it).
+    grammar_checked: ka ? true : !!r.grammar_checked,
     fact_checked: !!r.fact_checked,
     published_at: r.published_at,
   };
@@ -97,6 +128,7 @@ export function toDto(r: ArticleRow, rank?: number): ArticleDto {
 
 // ─── GET /api/articles ──────────────────────────────────────────────────────
 export interface ListQuery {
+  lang: Lang;
   tab: string;
   date?: string;
   slot?: number;
@@ -108,7 +140,10 @@ export function parseListQuery(sp: URLSearchParams): ListQuery | { error: string
   const tab = sp.get('tab') ?? 'all';
   if (!TABS.some((t) => t.id === tab)) return { error: `unknown tab "${tab}"` };
 
-  const q: ListQuery = { tab, limit: DEFAULT_LIMIT };
+  const lang = sp.get('lang') ?? 'en';
+  if (!LANGS.includes(lang as Lang)) return { error: `lang must be one of ${LANGS.join(', ')}` };
+
+  const q: ListQuery = { lang: lang as Lang, tab, limit: DEFAULT_LIMIT };
   const date = sp.get('date');
   if (date) {
     if (!isDate(date)) return { error: 'date must be YYYY-MM-DD (Asia/Tbilisi)' };
@@ -163,10 +198,21 @@ function filters(q: Pick<ListQuery, 'tab' | 'date' | 'slot'>): { where: string[]
   return { where, binds, bind };
 }
 
+const KA_COLUMNS = `t.headline AS k_headline, t.summary AS k_summary, t.what_happened AS k_what_happened, t.why_it_matters AS k_why_it_matters,
+  t.figures_dates AS k_figures_dates, t.affected_entities AS k_affected_entities, t.risks_uncertainty AS k_risks_uncertainty`;
+
+/** Georgian reads join the finished translation; a story without one is simply not listed in Georgian. */
+function source(lang: Lang): { select: string; from: string } {
+  return lang === 'ka'
+    ? { select: `a.*, ${KA_COLUMNS}`, from: `articles a JOIN article_translations t ON t.article_id = a.id AND t.lang = 'ka' AND t.grammar_checked = 1` }
+    : { select: 'a.*', from: 'articles a' };
+}
+
 export function buildListSql(q: ListQuery): { sql: string; binds: (string | number)[] } {
   const { where, binds, bind } = filters(q);
+  const { select, from } = source(q.lang);
   if (q.tab === 'top10') {
-    return { sql: `SELECT * FROM articles WHERE ${where.join(' AND ')} ORDER BY trust_score DESC, published_at DESC, id DESC LIMIT 10`, binds };
+    return { sql: `SELECT ${select} FROM ${from} WHERE ${where.join(' AND ')} ORDER BY trust_score DESC, published_at DESC, id DESC LIMIT 10`, binds };
   }
   if (q.before) {
     const a = bind(q.before.at);
@@ -174,14 +220,14 @@ export function buildListSql(q: ListQuery): { sql: string; binds: (string | numb
     where.push(`(published_at < ${a} OR (published_at = ${a} AND id < ${i}))`);
   }
   // one extra row tells us whether another page exists
-  return { sql: `SELECT * FROM articles WHERE ${where.join(' AND ')} ORDER BY published_at DESC, id DESC LIMIT ${q.limit + 1}`, binds };
+  return { sql: `SELECT ${select} FROM ${from} WHERE ${where.join(' AND ')} ORDER BY published_at DESC, id DESC LIMIT ${q.limit + 1}`, binds };
 }
 
 async function listArticles(env: Env, sp: URLSearchParams): Promise<Response> {
   const q = parseListQuery(sp);
   if ('error' in q) return fail(400, q.error);
   const { sql, binds } = buildListSql(q);
-  const { results } = await env.DB.prepare(sql).bind(...binds).all<ArticleRow>();
+  const { results } = await env.DB.prepare(sql).bind(...binds).all<Row>();
 
   const isTop = q.tab === 'top10';
   const page = isTop ? results : results.slice(0, q.limit);
@@ -191,9 +237,10 @@ async function listArticles(env: Env, sp: URLSearchParams): Promise<Response> {
   return json(
     {
       tab: q.tab,
+      lang: q.lang,
       timezone: TIMEZONE,
       filter: { date: q.date ?? null, time: q.slot === undefined ? null : formatSlot(q.slot) },
-      articles: page.map((r, i) => toDto(r, isTop ? i + 1 : undefined)),
+      articles: page.map((r, i) => toDto(r, isTop ? i + 1 : undefined, q.lang)),
       nextBefore,
     },
     200,
@@ -201,11 +248,14 @@ async function listArticles(env: Env, sp: URLSearchParams): Promise<Response> {
   );
 }
 
-async function getArticle(env: Env, id: string): Promise<Response> {
+async function getArticle(env: Env, id: string, langParam: string | null): Promise<Response> {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail(400, 'invalid id');
-  const row = await env.DB.prepare(`SELECT * FROM articles WHERE id = ?1 AND ${PUBLISHED}`).bind(id).first<ArticleRow>();
+  const lang = langParam ?? 'en';
+  if (!LANGS.includes(lang as Lang)) return fail(400, `lang must be one of ${LANGS.join(', ')}`);
+  const { select, from } = source(lang as Lang);
+  const row = await env.DB.prepare(`SELECT ${select} FROM ${from} WHERE a.id = ?1 AND ${PUBLISHED}`).bind(id).first<Row>();
   if (!row) return fail(404, 'not found');
-  const audit = await env.DB.prepare(`SELECT detail FROM pipeline_events WHERE article_id = ?1 AND stage = 'fact_check' ORDER BY id DESC LIMIT 1`).bind(id).first<{ detail: string | null }>();
+  const audit = await env.DB.prepare(`SELECT detail FROM pipeline_events WHERE article_id = ?1 AND stage = 'fact_check' AND outcome = 'ok' ORDER BY id DESC LIMIT 1`).bind(id).first<{ detail: string | null }>();
   let trust: unknown = null;
   try {
     const d = audit?.detail ? (JSON.parse(audit.detail) as Record<string, unknown>) : null;
@@ -213,7 +263,7 @@ async function getArticle(env: Env, id: string): Promise<Response> {
   } catch {
     /* audit detail is best-effort */
   }
-  return json({ article: toDto(row), trust }, 200, 'public, max-age=60');
+  return json({ article: toDto(row, undefined, lang as Lang), trust }, 200, 'public, max-age=60');
 }
 
 // ─── GET /api/slots ─────────────────────────────────────────────────────────
@@ -299,7 +349,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     if (req.method === 'GET' || req.method === 'HEAD') {
       if (path === '/api/articles') return await listArticles(env, url.searchParams);
       const one = /^\/api\/articles\/([^/]+)$/.exec(path);
-      if (one) return await getArticle(env, decodeURIComponent(one[1] as string));
+      if (one) return await getArticle(env, decodeURIComponent(one[1] as string), url.searchParams.get('lang'));
       if (path === '/api/slots') return await slots(env, url.searchParams);
       if (path === '/api/meta') return await meta(env);
       if (path === '/api/status') return await status(env);
@@ -310,8 +360,8 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
       if (req.method !== 'POST') return fail(405, 'use POST');
       if (!(await authorised(req, env))) return fail(401, 'unauthorized');
       const stage = run[1] as StageName | undefined;
-      if (stage && !STAGE_ORDER.includes(stage)) return fail(404, `unknown stage "${stage}" (use ${STAGE_ORDER.join(', ')})`);
-      return json(await runPipeline(env, { trigger: 'manual', only: stage }));
+      if (stage && !STAGE_NAMES.includes(stage)) return fail(404, `unknown stage "${stage}" (use ${PIPELINE_ORDER.join(', ')})`);
+      return json(await runPipeline(env, { trigger: 'manual', stages: stage ? [stage] : undefined }));
     }
 
     return fail(404, 'not found');

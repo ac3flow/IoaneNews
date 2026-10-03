@@ -1,4 +1,5 @@
-// Research Agent: collect -> pool -> cluster -> draft.
+// Research Agent: collect -> pool -> cluster -> draft. `collectStage` and `researchStage` are separate
+// stages so they can run in separate cron invocations (see run.ts).
 //
 //  1. Poll a round-robin slice of the registry's feeds (FEEDS_PER_RUN per run).
 //  2. Add new items to a rolling pool (feed_items), de-duplicated by normalised URL.
@@ -27,10 +28,13 @@ const MAX_OFFERS = 3; // times an item may be sent to the LLM without becoming a
 const MAX_ITEMS_PER_CLUSTER = 6;
 const BASELINE_AGE_MS = 7 * 86_400_000; // first sight of a page feed: mark existing links as old news
 
-/** Stride-interleave so every run mixes categories; each feed is polled every ceil(N/perRun) runs. */
-export function selectFeedBatch<T>(feeds: T[], now: number, perRun: number): T[] {
+/**
+ * Stride-interleave so every collect mixes categories; each feed is polled every `groups` ticks,
+ * where groups = ceil(feeds / perRun). `tick` is any counter that advances by 1 per collect.
+ */
+export function selectFeedBatch<T>(feeds: T[], tick: number, perRun: number): T[] {
   const groups = Math.max(1, Math.ceil(feeds.length / perRun));
-  const slot = Math.floor(now / SLOT_MS) % groups;
+  const slot = tick % groups;
   return feeds.filter((_, i) => i % groups === slot);
 }
 
@@ -147,11 +151,22 @@ interface Candidate {
   ev: ClusterEval;
 }
 
+/**
+ * Collect: poll this tick's slice of the registry and add new items to the pool. No LLM.
+ * In staged mode it runs twice per 5-minute slot (phase 0 at :00, phase 1 at :04), so the
+ * counter advances by 2 per slot and every feed is still visited on a regular cycle.
+ */
+export async function collectStage(ctx: StageCtx, phase = 0): Promise<Record<string, unknown>> {
+  const { now, cfg } = ctx;
+  const perSlot = cfg.mode === 'staged' ? 2 : 1;
+  const tick = Math.floor(now / SLOT_MS) * perSlot + (perSlot === 2 ? phase : 0);
+  const batch = selectFeedBatch(FEEDS, tick, cfg.feedsPerRun);
+  return { ...(await collect(ctx, batch)), cycleTicks: Math.max(1, Math.ceil(FEEDS.length / cfg.feedsPerRun)) };
+}
+
+/** Research: cluster the pool and have the LLM draft briefings for clusters that can pass the gates. */
 export async function researchStage(ctx: StageCtx): Promise<Record<string, unknown>> {
   const { env, now, cfg } = ctx;
-
-  const batch = selectFeedBatch(FEEDS, now, cfg.feedsPerRun);
-  const collected = await collect(ctx, batch);
 
   const { results: pool } = await env.DB.prepare(
     `SELECT * FROM feed_items WHERE article_id IS NULL AND offered_count < ?1 AND published_at >= ?2
@@ -174,7 +189,7 @@ export async function researchStage(ctx: StageCtx): Promise<Record<string, unkno
       }),
     );
 
-  const summary = { ...collected, pool: pool.length, eligibleClusters: clusters.length };
+  const summary = { pool: pool.length, eligibleClusters: clusters.length };
   if (clusters.length === 0) return { ...summary, skipped: 'no cluster can meet the double-sourcing rule yet' };
   if (!ctx.llm) return { ...summary, skipped: 'GEMINI_API_KEY not configured' };
 

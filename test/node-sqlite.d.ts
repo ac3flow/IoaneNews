@@ -16,3 +16,12 @@ declare module '*.sql?raw' {
   const sql: string;
   export default sql;
 }
+
+declare module '*.html?raw' {
+  const html: string;
+  export default html;
+}
+declare module '*.js?raw' {
+  const js: string;
+  export default js;
+}

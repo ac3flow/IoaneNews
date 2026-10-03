@@ -14,7 +14,7 @@
 
   --font-display: "Bricolage Grotesque", "Noto Sans Georgian", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Instrument Sans", "Noto Sans Georgian", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "Geist Mono", "Noto Sans Georgian", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 @layer base {
@@ -74,6 +74,16 @@
     @apply border-amber-500/50 bg-amber-500/10 text-amber-300;
   }
 
+  .lang {
+    @apply rounded-md px-2.5 py-1 text-slate-400 transition-colors;
+  }
+  .lang:hover {
+    @apply text-white;
+  }
+  .lang[aria-pressed="true"] {
+    @apply bg-emerald-500/15 text-emerald-300;
+  }
+
   .field {
     @apply h-10 rounded-lg border border-slate-800 bg-slate-900 px-3 font-mono text-sm text-slate-100 transition-colors;
   }
@@ -131,6 +141,24 @@
       background-position: -200% 0;
     }
   }
+}
+
+/* Georgian typography. Georgian running text has no capitals (CSS uppercase would turn it into
+   Mtavruli), negative tracking hurts legibility, and its glyphs need a little more line height. */
+:lang(ka) .eyebrow,
+:lang(ka) .tag {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+:lang(ka) .display {
+  font-stretch: 100%;
+  letter-spacing: 0;
+}
+:lang(ka) h1 {
+  line-height: 1.2;
+}
+:lang(ka) h2 {
+  line-height: 1.35;
 }
 
 @media (prefers-reduced-motion: reduce) {

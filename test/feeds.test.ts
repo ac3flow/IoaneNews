@@ -47,7 +47,7 @@ describe('parseFeed', () => {
 
   it('caps items per feed', () => {
     const xml = '<rss><channel>' + Array.from({ length: 50 }, (_, i) => `<item><title>T${i}</title><link>https://e.com/${i}</link></item>`).join('') + '</channel></rss>';
-    expect(parseFeed(xml, NOW)).toHaveLength(20);
+    expect(parseFeed(xml, NOW)).toHaveLength(12);
   });
 });
 

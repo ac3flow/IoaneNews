@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { numbersPreserved } from '../src/pipeline/editor';
-import { runPipeline } from '../src/pipeline/run';
+import { numbersPreserved } from '../src/pipeline/numbers';
+import { PIPELINE_ORDER, runPipeline } from '../src/pipeline/run';
 import { selectFeedBatch } from '../src/pipeline/research';
 import { FEEDS } from '../src/registry/sources';
 import type { ArticleRow } from '../src/types';
@@ -32,10 +32,17 @@ describe('end-to-end pipeline: Research -> Edit -> Fact-Check -> Publish/Reject'
 
     const r = await runPipeline(env, { trigger: 'manual', now: NOW, llm });
     expect(r.status).toBe('ok');
-    expect(llm.calls).toEqual(['research', 'edit', 'fact_check']);
+    expect(llm.calls).toEqual(['research', 'edit', 'fact_check', 'translate', 'ka_grammar']);
 
     const articles = rows<ArticleRow>(env, `SELECT * FROM articles ORDER BY created_at, id`);
     expect(articles).toHaveLength(2);
+    // Georgian version exists, was grammar-checked, and the article was published only after that
+    const ka = rows<{ article_id: string; grammar_checked: number; headline: string }>(env, `SELECT * FROM article_translations WHERE lang='ka'`);
+    expect(ka).toHaveLength(2);
+    for (const t of ka) {
+      expect(t.grammar_checked).toBe(1);
+      expect(t.headline).toContain('ქართული');
+    }
     for (const a of articles) {
       expect(a.status).toBe('published');
       expect(a.grammar_checked).toBe(1);
@@ -121,10 +128,10 @@ describe('Editor', () => {
     draft('a1');
     const llm = fakeLlm({ edit: (input) => ({ articles: input.articles.map((a: any) => ({ ...a, summary: 'The rate is 9.99 percent as of 2026, said officials today.' })) }) });
     for (let i = 0; i < 3; i++) {
-      await runPipeline(env, { trigger: 'manual', only: 'edit', now: NOW + i * 300_000, llm });
+      await runPipeline(env, { trigger: 'manual', stages: ['edit'], now: NOW + i * 300_000, llm });
       expect(rows<{ status: string }>(env, `SELECT status FROM articles`)[0]?.status).toBe('raw_research');
     }
-    await runPipeline(env, { trigger: 'manual', only: 'edit', now: NOW + 3 * 300_000, llm });
+    await runPipeline(env, { trigger: 'manual', stages: ['edit'], now: NOW + 3 * 300_000, llm });
     expect(rows<{ status: string }>(env, `SELECT status FROM articles`)[0]?.status).toBe('rejected');
     const why = rows<{ detail: string }>(env, `SELECT detail FROM pipeline_events WHERE stage='edit' AND outcome='rejected'`)[0]?.detail;
     expect(JSON.parse(why ?? '{}').reason).toBe('editor_failed');
@@ -136,13 +143,13 @@ describe('Editor', () => {
     draft('a1');
     const down = { calls: [], json: async () => { throw new Error('Gemini 503: overloaded'); } };
     for (let i = 0; i < 6; i++) {
-      const r = await runPipeline(env, { trigger: 'manual', only: 'edit', now: NOW + i * 300_000, llm: down });
+      const r = await runPipeline(env, { trigger: 'manual', stages: ['edit'], now: NOW + i * 300_000, llm: down });
       expect(r.status).toBe('error');
     }
     expect(rows<{ status: string }>(env, `SELECT status FROM articles`)[0]?.status).toBe('raw_research');
     expect(rows<{ n: number }>(env, `SELECT COUNT(*) n FROM pipeline_events WHERE article_id IS NOT NULL`)[0]?.n).toBe(0);
     // ...and once the LLM is back the article is edited normally
-    await runPipeline(env, { trigger: 'manual', only: 'edit', now: NOW + 9 * 300_000, llm: fakeLlm() });
+    await runPipeline(env, { trigger: 'manual', stages: ['edit'], now: NOW + 9 * 300_000, llm: fakeLlm() });
     expect(rows<{ status: string }>(env, `SELECT status FROM articles`)[0]?.status).toBe('edited');
   });
 });
@@ -154,7 +161,7 @@ describe('Fact-Checker', () => {
   it('rejects a single non-primary source (double-sourcing) and records why', async () => {
     const env = makeEnv();
     edited(env, 'one', [{ url: 'https://www.reuters.com/a', trust_score: 4.5 }]);
-    await runPipeline(env, { trigger: 'manual', only: 'fact_check', now: NOW, llm: fakeLlm() });
+    await runPipeline(env, { trigger: 'manual', stages: ['fact_check'], now: NOW, llm: fakeLlm() });
     const a = rows<ArticleRow>(env, `SELECT * FROM articles`)[0];
     expect(a?.status).toBe('rejected');
     expect(a?.fact_checked).toBe(1);
@@ -169,14 +176,14 @@ describe('Fact-Checker', () => {
     const llm = fakeLlm({
       fact_check: (i) => ({ results: i.articles.map((a: any) => ({ id: a.id, claims: [{ claim: 'Rate is 5%', verdict: 'contradicted' }, { claim: 'Ok', verdict: 'supported' }] })) }),
     });
-    await runPipeline(env, { trigger: 'manual', only: 'fact_check', now: NOW, llm });
+    await runPipeline(env, { trigger: 'manual', stages: ['fact_check'], now: NOW, llm });
     expect(rows<ArticleRow>(env, `SELECT * FROM articles`)[0]?.status).toBe('rejected');
   });
 
   it('never publishes without the LLM: the article waits', async () => {
     const env = makeEnv();
     edited(env, 'wait', [{ url: 'https://www.federalreserve.gov/x', trust_score: 5 }]);
-    const r = await runPipeline(env, { trigger: 'manual', only: 'fact_check', now: NOW, llm: null });
+    const r = await runPipeline(env, { trigger: 'manual', stages: ['fact_check'], now: NOW, llm: null });
     expect(r.status).toBe('ok');
     expect(rows<ArticleRow>(env, `SELECT * FROM articles`)[0]?.status).toBe('edited');
   });
@@ -184,7 +191,7 @@ describe('Fact-Checker', () => {
   it('a social link adds nothing: Hacker News + one wire still fails double-sourcing', async () => {
     const env = makeEnv();
     edited(env, 's', [{ url: 'https://news.ycombinator.com/item?id=1', trust_score: 1.5 }, { url: 'https://www.reuters.com/a', trust_score: 4.5 }]);
-    await runPipeline(env, { trigger: 'manual', only: 'fact_check', now: NOW, llm: fakeLlm() });
+    await runPipeline(env, { trigger: 'manual', stages: ['fact_check'], now: NOW, llm: fakeLlm() });
     expect(rows<ArticleRow>(env, `SELECT * FROM articles`)[0]?.status).toBe('rejected');
   });
 });
@@ -194,17 +201,19 @@ describe('orchestration', () => {
     const env = makeEnv();
     insertArticle(env, { id: 'old', created_at: '2026-10-02T10:00:00.000Z' });
     insertArticle(env, { id: 'new', created_at: '2026-10-03T12:00:00.000Z' });
-    await runPipeline(env, { trigger: 'manual', only: 'research', now: NOW, llm: null });
+    await runPipeline(env, { trigger: 'manual', stages: ['research'], now: NOW, llm: null });
     const s = Object.fromEntries(rows<{ id: string; status: string }>(env, `SELECT id, status FROM articles`).map((r) => [r.id, r.status]));
     expect(s).toEqual({ old: 'rejected', new: 'raw_research' });
   });
 
-  it('a second run yields while another is in progress', async () => {
+  it('a second run of the same stages yields; runs of other stages and crashed runs do not block', async () => {
     const env = makeEnv();
     stubFeeds({});
-    env.DB.raw.prepare(`INSERT INTO pipeline_runs (run_id, trigger, started_at, status) VALUES ('live','cron',?,'running')`).run(new Date(NOW - 60_000).toISOString());
-    const r = await runPipeline(env, { trigger: 'cron', now: NOW, llm: null });
-    expect(r.status).toBe('skipped');
+    const full = PIPELINE_ORDER.join('+');
+    env.DB.raw.prepare(`INSERT INTO pipeline_runs (run_id, scope, trigger, started_at, status) VALUES ('live',?,'cron',?,'running')`).run(full, new Date(NOW - 60_000).toISOString());
+    expect((await runPipeline(env, { trigger: 'cron', now: NOW, llm: null })).status).toBe('skipped');
+    // a different scope (staged crons overlap in time) is not blocked
+    expect((await runPipeline(env, { trigger: 'cron', stages: ['edit'], now: NOW, llm: null })).status).toBe('ok');
     // a crashed run (older than the lock window) does not block forever
     env.DB.raw.prepare(`UPDATE pipeline_runs SET started_at = ? WHERE run_id = 'live'`).run(new Date(NOW - 3600_000).toISOString());
     expect((await runPipeline(env, { trigger: 'cron', now: NOW + 1000, llm: null })).status).toBe('ok');
@@ -215,10 +224,10 @@ describe('orchestration', () => {
     const groups = Math.ceil(FEEDS.length / per);
     const seen = new Map<string, number>();
     for (let slot = 0; slot < groups; slot++) {
-      for (const f of selectFeedBatch(FEEDS, slot * 300_000, per)) seen.set(f.id, (seen.get(f.id) ?? 0) + 1);
+      for (const f of selectFeedBatch(FEEDS, slot, per)) seen.set(f.id, (seen.get(f.id) ?? 0) + 1);
     }
     expect(seen.size).toBe(FEEDS.length);
     expect([...seen.values()].every((n) => n === 1)).toBe(true);
-    expect(selectFeedBatch(FEEDS, NOW, per).length).toBeLessThanOrEqual(per + 1);
+    expect(selectFeedBatch(FEEDS, 12345, per).length).toBeLessThanOrEqual(per + 1);
   });
 });

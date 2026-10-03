@@ -14,7 +14,8 @@ export interface RawItem {
 
 export const UA = 'Mozilla/5.0 (compatible; IOANE-brief-agent/1.0)';
 const FETCH_TIMEOUT_MS = 8000;
-const MAX_ITEMS_PER_FEED = 20;
+// A feed is re-polled every few minutes, so only the newest items can be new. Fewer items = less CPU.
+const MAX_ITEMS_PER_FEED = 12;
 
 export async function sha(str: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -53,11 +54,21 @@ function safeCodePoint(n: number): string {
   }
 }
 
-export const stripHtml = (s: string): string => decodeEntities(decodeEntities(s || '')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+export function stripHtml(s: string): string {
+  let t = decodeEntities(s || ''); // CDATA and one level of entities (markup escaped as &lt;p&gt;)
+  t = t.replace(/<[^>]*>/g, ' ');
+  if (t.includes('&')) t = decodeEntities(t); // text entities that were nested inside markup
+  return t.replace(/\s+/g, ' ').trim();
+}
 
+const TAG_RES = new Map<string, RegExp>();
 function tag(block: string, name: string): string {
-  const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i').exec(block);
-  return m?.[1] ?? '';
+  let re = TAG_RES.get(name);
+  if (!re) {
+    re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i');
+    TAG_RES.set(name, re);
+  }
+  return re.exec(block)?.[1] ?? '';
 }
 
 function linkOf(block: string): string {
@@ -72,17 +83,24 @@ function linkOf(block: string): string {
   return stripHtml(tag(block, 'link'));
 }
 
+// Workers Free allows ~10 ms of CPU per invocation, so parsing must stay cheap: stop scanning after
+// MAX_ITEMS_PER_FEED items (OpenAI's feed has >1,000) and clip long bodies before stripping markup.
+const RAW_FIELD_CLIP = 2500;
+const clipRaw = (s: string): string => (s.length > RAW_FIELD_CLIP ? s.slice(0, RAW_FIELD_CLIP) : s);
+
 export function parseFeed(xml: string, now: number = Date.now()): RawItem[] {
-  const blocks = xml.match(/<item[\s>][\s\S]*?<\/item>|<entry[\s>][\s\S]*?<\/entry>/gi) ?? [];
   const out: RawItem[] = [];
-  for (const b of blocks.slice(0, MAX_ITEMS_PER_FEED)) {
+  const blocks = /<(item|entry)[\s>][\s\S]*?<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  for (let n = 0; n < MAX_ITEMS_PER_FEED && (m = blocks.exec(xml)); n++) {
+    const b = m[0];
     const title = stripHtml(tag(b, 'title'));
     const link = linkOf(b);
     if (!title || !/^https?:\/\//i.test(link)) continue;
     const dateRaw = tag(b, 'pubDate') || tag(b, 'published') || tag(b, 'updated') || tag(b, 'dc:date');
     const d = new Date(stripHtml(dateRaw));
     const published = Number.isNaN(d.getTime()) ? new Date(now) : d;
-    const snippet = stripHtml(tag(b, 'description') || tag(b, 'summary') || tag(b, 'content:encoded') || tag(b, 'content')).slice(0, 600);
+    const snippet = stripHtml(clipRaw(tag(b, 'description') || tag(b, 'summary') || tag(b, 'content:encoded') || tag(b, 'content'))).slice(0, 600);
     out.push({ title, url: normUrl(link), snippet, published: published.toISOString() });
   }
   return out;

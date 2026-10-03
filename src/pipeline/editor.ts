@@ -8,26 +8,16 @@ import { nowIso } from '../time';
 import { MAX_ATTEMPTS, attemptCounts, logEvent, type StageCtx } from './context';
 import { EDITOR_SYSTEM } from './prompts';
 import { rejectStatement } from './publish';
+import { numbersPreserved } from './numbers';
 import { EditorOutput, type BriefingFields } from './schemas';
 
-const BATCH = 5;
-
 const FIELDS = ['headline', 'summary', 'what_happened', 'why_it_matters', 'figures_dates', 'affected_entities', 'risks_uncertainty'] as const;
-
-const numbersIn = (s: string): Set<string> => new Set((s.match(/\d+(?:[.,]\d+)*/g) ?? []).map((n) => n.replace(/,/g, '')));
-
-/** True when `after` contains exactly the same numeric tokens as `before`. */
-export function numbersPreserved(before: string, after: string): boolean {
-  const a = numbersIn(before);
-  const b = numbersIn(after);
-  return a.size === b.size && [...a].every((n) => b.has(n));
-}
 
 const joined = (o: Record<(typeof FIELDS)[number], string | null>): string => FIELDS.map((f) => o[f] ?? '').join('\n');
 
 export async function editStage(ctx: StageCtx): Promise<Record<string, unknown>> {
   const { env, now } = ctx;
-  const { results: drafts } = await env.DB.prepare(`SELECT * FROM articles WHERE status = 'raw_research' ORDER BY created_at ASC LIMIT ?1`).bind(BATCH).all<ArticleRow>();
+  const { results: drafts } = await env.DB.prepare(`SELECT * FROM articles WHERE status = 'raw_research' ORDER BY created_at ASC LIMIT ?1`).bind(ctx.cfg.maxArticlesPerRun).all<ArticleRow>();
   if (drafts.length === 0) return { skipped: 'nothing to edit' };
   if (!ctx.llm) return { skipped: 'GEMINI_API_KEY not configured', queued: drafts.length };
 

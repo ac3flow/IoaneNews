@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { handleApi, parseFigures, parseListQuery } from '../src/api';
-import { insertArticle, makeEnv } from './helpers';
+import { insertArticle, insertTranslation, makeEnv } from './helpers';
 
 type Env = ReturnType<typeof makeEnv>;
 
@@ -153,6 +153,69 @@ describe('GET /api/articles', () => {
     }
     expect((await get(env, '/api/articles?limit=9999')).status).toBe(200);
     expect(parseListQuery(new URLSearchParams('limit=9999'))).toMatchObject({ limit: 50 });
+  });
+});
+
+describe('Georgian (lang=ka)', () => {
+  const seed = (env: Env) => {
+    pub(env, 'a1', '2026-10-03T10:00:00.000Z', { trust_score: 90, figures_dates: 'Rate: 4.25%', affected_entities: 'Fed, Markets' });
+    insertTranslation(env, 'a1', { headline: 'ფედმა განაკვეთი არ შეცვალა', figures_dates: 'განაკვეთი: 4.25%', affected_entities: 'ფედი, ბაზრები' });
+    pub(env, 'a2', '2026-10-03T11:00:00.000Z', { trust_score: 70 });
+    insertTranslation(env, 'a2', { grammar_checked: 0 }); // translated but not yet grammar-checked
+    pub(env, 'a3', '2026-10-03T12:00:00.000Z', { trust_score: 80 }); // no translation at all
+  };
+
+  it('defaults to English and returns every published story', async () => {
+    const env = makeEnv();
+    seed(env);
+    const { body } = await get(env, '/api/articles');
+    expect(body.lang).toBe('en');
+    expect(body.articles.map((a: any) => a.id)).toEqual(['a3', 'a2', 'a1']);
+    expect(body.articles[2].headline).toBe('Headline a1 goes here');
+  });
+
+  it('lang=ka returns the Georgian text, and only stories whose Georgian passed the grammar check', async () => {
+    const env = makeEnv();
+    seed(env);
+    const { body } = await get(env, '/api/articles?lang=ka');
+    expect(body.lang).toBe('ka');
+    expect(body.articles.map((a: any) => a.id)).toEqual(['a1']);
+    const a = body.articles[0];
+    expect(a).toMatchObject({ lang: 'ka', headline: 'ფედმა განაკვეთი არ შეცვალა', grammar_checked: true, trust_score: 90 });
+    expect(a.figures).toEqual([{ label: 'განაკვეთი', value: '4.25%' }]);
+    expect(a.affected_entities).toEqual(['ფედი', 'ბაზრები']);
+    expect(a.sources[0].name).toBe('Reuters'); // sources are shared across languages
+  });
+
+  it('tabs, Top 10, time filters and cursors all work in Georgian', async () => {
+    const env = makeEnv();
+    for (let i = 0; i < 4; i++) {
+      pub(env, `k${i}`, `2026-10-03T13:1${i}:00.000Z`, { trust_score: 60 + i, category: i % 2 ? 'Crypto' : 'Economics', georgia_related: i === 0 ? 1 : 0 });
+      insertTranslation(env, `k${i}`);
+    }
+    const ids = async (q: string) => (await get(env, `/api/articles?lang=ka&${q}`)).body.articles.map((a: any) => a.id);
+    expect(await ids('tab=crypto')).toEqual(['k3', 'k1']);
+    expect(await ids('tab=georgia')).toEqual(['k0']);
+    expect(await ids('tab=top10')).toEqual(['k3', 'k2', 'k1', 'k0']);
+    expect(await ids('time=17:10')).toEqual(['k3', 'k2', 'k1', 'k0']);
+    const page1 = (await get(env, '/api/articles?lang=ka&limit=2')).body;
+    expect(page1.articles.map((a: any) => a.id)).toEqual(['k3', 'k2']);
+    expect((await get(env, `/api/articles?lang=ka&limit=2&before=${encodeURIComponent(page1.nextBefore)}`)).body.articles.map((a: any) => a.id)).toEqual(['k1', 'k0']);
+  });
+
+  it('GET /api/articles/:id supports lang, and 404s in Georgian without a finished translation', async () => {
+    const env = makeEnv();
+    seed(env);
+    expect((await get(env, '/api/articles/a1?lang=ka')).body.article.headline).toBe('ფედმა განაკვეთი არ შეცვალა');
+    expect((await get(env, '/api/articles/a1')).body.article.headline).toBe('Headline a1 goes here');
+    expect((await get(env, '/api/articles/a3?lang=ka')).status).toBe(404);
+    expect((await get(env, '/api/articles/a3')).status).toBe(200);
+  });
+
+  it('rejects unknown languages', async () => {
+    const env = makeEnv();
+    expect((await get(env, '/api/articles?lang=fr')).status).toBe(400);
+    expect((await get(env, '/api/articles/a1?lang=fr')).status).toBe(400);
   });
 });
 

@@ -8,6 +8,10 @@ export interface Env {
 
   // vars (all strings, as Workers delivers them)
   GEMINI_MODEL?: string;
+  /** Optional stronger model for the two Georgian stages (translate, ka_grammar). */
+  GEMINI_MODEL_KA?: string;
+  /** 'staged' (default): several cron triggers, one slice of the pipeline each. 'single': one trigger runs everything. */
+  PIPELINE_MODE?: string;
   /** Optional: route Gemini calls through a gateway (e.g. Cloudflare AI Gateway) or a test server. */
   GEMINI_BASE_URL?: string;
   FEEDS_PER_RUN?: string;

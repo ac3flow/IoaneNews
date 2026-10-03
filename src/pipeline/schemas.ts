@@ -6,18 +6,25 @@ import { ARTICLE_CATEGORIES } from '../types';
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 const optionalText = (max: number) => z.string().trim().max(max).default('');
 
-export const BriefingFields = z.object({
-  headline: text(10, 180),
-  summary: text(30, 600),
-  what_happened: text(40, 1800),
-  why_it_matters: text(20, 1200),
-  /** One fact per line, "Label: value". */
-  figures_dates: optionalText(1200),
-  /** Comma-separated organisations / markets / countries. */
-  affected_entities: optionalText(500),
-  risks_uncertainty: text(10, 1200),
-});
+// `scale` loosens the length limits for Georgian, whose words and case endings run longer.
+const fields = (scale: number) =>
+  z.object({
+    headline: text(10, Math.round(180 * scale)),
+    summary: text(30, Math.round(600 * scale)),
+    what_happened: text(40, Math.round(1800 * scale)),
+    why_it_matters: text(20, Math.round(1200 * scale)),
+    /** One fact per line, "Label: value". */
+    figures_dates: optionalText(Math.round(1200 * scale)),
+    /** Comma-separated organisations / markets / countries. */
+    affected_entities: optionalText(Math.round(500 * scale)),
+    risks_uncertainty: text(10, Math.round(1200 * scale)),
+  });
+
+export const BriefingFields = fields(1);
 export type BriefingFields = z.infer<typeof BriefingFields>;
+
+export const GeorgianFields = fields(1.8);
+export type GeorgianFields = z.infer<typeof GeorgianFields>;
 
 export const ResearchOutput = z.object({
   briefings: z
@@ -58,3 +65,13 @@ export const FactCheckOutput = z.object({
     .max(10),
 });
 export type FactCheckOutput = z.infer<typeof FactCheckOutput>;
+
+export const TranslationOutput = z.object({
+  articles: z.array(GeorgianFields.extend({ id: z.string() })).max(10),
+});
+export type TranslationOutput = z.infer<typeof TranslationOutput>;
+
+export const KaGrammarOutput = z.object({
+  articles: z.array(GeorgianFields.extend({ id: z.string(), corrections: z.string().trim().max(800).default('') })).max(10),
+});
+export type KaGrammarOutput = z.infer<typeof KaGrammarOutput>;

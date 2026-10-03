@@ -1,21 +1,19 @@
 // IOANE News UI. No framework, no build step for JS. All story text is written with
 // textContent (never innerHTML): it is LLM-generated from web sources, so it is untrusted.
 
+import { DEFAULT_LANG, LANGS, makeT, plural } from './i18n.js';
+
 const TZ = 'Asia/Tbilisi';
 const SLOTS = 288; // 24h in 5-minute slots
 const POLL_MS = 30_000;
 const DELAYED_AFTER_MS = 12 * 60_000;
 
-const TABS_FALLBACK = [
-  { id: 'top10', label: 'Top 10' }, { id: 'all', label: 'All' }, { id: 'georgia', label: 'Georgia Focus' },
-  { id: 'ai-tech', label: 'AI & Tech' }, { id: 'economics', label: 'Economics' }, { id: 'crypto', label: 'Crypto' },
-  { id: 'marketing', label: 'Marketing' }, { id: 'real-estate', label: 'Real Estate' },
-  { id: 'global-trade', label: 'Global Trade' }, { id: 'vc-startups', label: 'VC & Startups' },
-];
+const TABS_FALLBACK = ['top10', 'all', 'georgia', 'ai-tech', 'economics', 'crypto', 'marketing', 'real-estate', 'global-trade', 'vc-startups'].map((id) => ({ id }));
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
+  lang: DEFAULT_LANG,
   tabs: TABS_FALLBACK,
   tab: 'all',
   date: null, // YYYY-MM-DD, Tbilisi; null = any day
@@ -55,14 +53,55 @@ function svg(tag, attrs = {}, ...kids) {
 
 const safeHref = (u) => (/^https?:\/\//i.test(u) ? u : null);
 
+// ─── language ───────────────────────────────────────────────────────────────
+let t = makeT(state.lang);
+function pickLang() {
+  const q = new URLSearchParams(location.search).get('lang');
+  if (LANGS.includes(q)) return q;
+  try {
+    const saved = localStorage.getItem('lang');
+    if (LANGS.includes(saved)) return saved;
+  } catch {
+    /* storage can be blocked; the default applies */
+  }
+  return DEFAULT_LANG;
+}
+
 // ─── time (Asia/Tbilisi) ────────────────────────────────────────────────────
-const partsFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ });
-const longDayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'short' });
+// Intl supplies only the numbers (in Tbilisi time). Month and weekday NAMES come from tables, because
+// not every browser ships Georgian locale data and Intl silently falls back to English without it.
+const MONTHS = {
+  ka: ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'],
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+};
+const WEEKDAYS = {
+  ka: ['კვირა', 'ორშაბათი', 'სამშაბათი', 'ოთხშაბათი', 'ხუთშაბათი', 'პარასკევი', 'შაბათი'],
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+};
+const EN_WEEKDAYS = WEEKDAYS.en;
+const partsFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+
+function tbParts(ms) {
+  const p = Object.fromEntries(partsFmt.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return { day: +p.day, month: +p.month, year: +p.year, hour: +p.hour, minute: +p.minute, weekday: EN_WEEKDAYS.indexOf(p.weekday) };
+}
 
 function tb(iso) {
-  const p = Object.fromEntries(partsFmt.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
-  return { time: `${p.hour}:${p.minute}`, date: `${p.day} ${p.month} ${p.year}`, hour: +p.hour, minute: +p.minute };
+  const p = tbParts(Date.parse(iso));
+  return {
+    time: `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`,
+    date: `${p.day} ${MONTHS[state.lang][p.month - 1]} ${p.year}`,
+    hour: p.hour,
+    minute: p.minute,
+  };
+}
+
+/** "შაბათი, 3 ოქტ" / "Saturday 3 Oct" for a Tbilisi calendar date. */
+function longDay(ymd) {
+  const p = tbParts(Date.parse(`${ymd}T12:00:00+04:00`));
+  const head = WEEKDAYS[state.lang][p.weekday];
+  return `${head}${state.lang === 'ka' ? ',' : ''} ${p.day} ${MONTHS[state.lang][p.month - 1]}`;
 }
 const serverNow = () => Date.now() + state.skew;
 const todayTb = () => dayFmt.format(new Date(serverNow()));
@@ -74,13 +113,12 @@ const toMin = (hhmm) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
 const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const snap = (m) => m - (m % 5);
 const tapeDate = () => state.date ?? todayTb();
-const longDay = (ymd) => longDayFmt.format(new Date(`${ymd}T12:00:00+04:00`));
 
 function ago(iso) {
   const s = Math.max(0, (serverNow() - Date.parse(iso)) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 60) return t('justNow');
+  if (s < 3600) return t('minAgo', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('hourAgo', { n: Math.floor(s / 3600) });
   return null;
 }
 
@@ -97,7 +135,7 @@ async function api(path, signal, fresh = false) {
 function readUrl() {
   const q = new URLSearchParams(location.search);
   const tab = q.get('tab');
-  if (tab && state.tabs.some((t) => t.id === tab)) state.tab = tab;
+  if (tab && state.tabs.some((x) => x.id === tab)) state.tab = tab;
   const date = q.get('date');
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) state.date = date;
   const time = q.get('time');
@@ -105,6 +143,7 @@ function readUrl() {
 }
 function writeUrl() {
   const q = new URLSearchParams();
+  if (state.lang !== DEFAULT_LANG) q.set('lang', state.lang);
   if (state.tab !== 'all') q.set('tab', state.tab);
   if (state.date) q.set('date', state.date);
   if (state.time) q.set('time', state.time);
@@ -125,13 +164,13 @@ function renderLive() {
   const ss = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
   if (last === null) {
     dot.className = 'size-2 rounded-full bg-slate-500';
-    text.textContent = 'Waiting for the first run';
+    text.textContent = t('liveWaiting');
   } else if (serverNow() - last > DELAYED_AFTER_MS) {
     dot.className = 'size-2 rounded-full bg-amber-500';
-    text.textContent = `Delayed · last run ${tb(m.lastRunAt).time}`;
+    text.textContent = t('liveDelayed', { time: tb(m.lastRunAt).time });
   } else {
     dot.className = 'size-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgb(16_185_129/0.2)] motion-safe:animate-pulse';
-    text.textContent = remaining === 0 ? 'Running now…' : `Live · next run in ${mm}:${ss}`;
+    text.textContent = remaining === 0 ? t('liveRunning') : t('liveOk', { mm, ss });
   }
 }
 
@@ -148,7 +187,7 @@ async function refreshMeta() {
     renderLive();
     renderTape();
   } catch {
-    $('live-text').textContent = 'Offline · retrying';
+    $('live-text').textContent = t('liveOffline');
     $('live-dot').className = 'size-2 rounded-full bg-rose-500';
   }
 }
@@ -157,19 +196,19 @@ async function refreshMeta() {
 function renderTabs() {
   const row = $('tabs-row');
   row.replaceChildren(
-    ...state.tabs.map((t) =>
+    ...state.tabs.map((tab) =>
       h(
         'button',
         {
           type: 'button',
           class: 'tab',
-          'data-kind': t.id === 'top10' ? 'top' : null,
-          'aria-current': String(t.id === state.tab),
-          onclick: () => selectTab(t.id),
+          'data-kind': tab.id === 'top10' ? 'top' : null,
+          'aria-current': String(tab.id === state.tab),
+          onclick: () => selectTab(tab.id),
         },
-        t.id === 'top10' ? svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'currentColor', 'aria-hidden': 'true' }, svg('path', { d: 'm12 2 3 6.5 7 .9-5.1 4.9 1.3 7L12 17.8 5.8 21.3l1.3-7L2 9.4l7-.9z' })) : null,
-        t.label,
-        t.id === 'georgia' ? h('span', { class: 'size-1.5 rounded-full bg-emerald-400', 'aria-hidden': 'true' }) : null,
+        tab.id === 'top10' ? svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'currentColor', 'aria-hidden': 'true' }, svg('path', { d: 'm12 2 3 6.5 7 .9-5.1 4.9 1.3 7L12 17.8 5.8 21.3l1.3-7L2 9.4l7-.9z' })) : null,
+        t(`tab.${tab.id}`),
+        tab.id === 'georgia' ? h('span', { class: 'size-1.5 rounded-full bg-emerald-400', 'aria-hidden': 'true' }) : null,
       ),
     ),
   );
@@ -267,14 +306,14 @@ function renderTape() {
 
   // keep the slider semantics in step
   const total = Object.values(state.slots).reduce((a, b) => a + b, 0);
-  $('tape-title').textContent = today ? `Today · ${longDay(day)}` : longDay(day);
+  $('tape-title').textContent = today ? t('tapeToday', { day: longDay(day) }) : longDay(day);
   if (state.time) {
     const m = toMin(state.time);
     tape.setAttribute('aria-valuenow', String(m));
-    tape.setAttribute('aria-valuetext', `${fromMin(m)} to ${fromMin(m + 4)} Tbilisi time`);
+    tape.setAttribute('aria-valuetext', t('tapeValue', { from: fromMin(m), to: fromMin(m + 4) }));
   } else {
     tape.removeAttribute('aria-valuenow');
-    tape.setAttribute('aria-valuetext', total ? `No slot selected, ${total} stories on this day` : 'No slot selected');
+    tape.setAttribute('aria-valuetext', total ? t('tapeNoneN', { n: total }) : t('tapeNone'));
   }
 }
 
@@ -319,7 +358,7 @@ tape.addEventListener('pointermove', (e) => {
   const { idx, x } = slotAt(e);
   state.hover = idx;
   const n = state.slots[idx] || 0;
-  tip.textContent = `${fromMin(idx * 5)} · ${n} ${n === 1 ? 'story' : 'stories'}`;
+  tip.textContent = `${fromMin(idx * 5)} · ${plural(t, 'stories', n)}`;
   tip.classList.remove('hidden');
   tip.style.left = `${Math.min(Math.max(x, 60), tape.clientWidth - 60)}px`;
   if (dragging) setTime(fromMin(idx * 5), { fromTape: true });
@@ -376,8 +415,8 @@ function ring(score) {
   const c = 2 * Math.PI * r;
   return svg(
     'svg',
-    { width: 48, height: 48, viewBox: '0 0 44 44', role: 'img', 'aria-label': `Trust score ${score} out of 100`, class: 'shrink-0' },
-    svg('title', {}, `Trust score ${score} out of 100`),
+    { width: 48, height: 48, viewBox: '0 0 44 44', role: 'img', 'aria-label': t('trustLabel', { n: score }), class: 'shrink-0' },
+    svg('title', {}, t('trustLabel', { n: score })),
     svg('circle', { cx: 22, cy: 22, r, fill: 'none', 'stroke-width': 4, class: 'stroke-slate-800' }),
     svg('circle', { cx: 22, cy: 22, r, fill: 'none', 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-dasharray': `${(Math.max(0, Math.min(100, score)) / 100) * c} ${c}`, transform: 'rotate(-90 22 22)', class: 'stroke-amber-500' }),
     svg('text', { x: 22, y: 26.5, 'text-anchor': 'middle', class: 'fill-amber-300 font-mono text-[13px] font-semibold' }, String(score)),
@@ -387,6 +426,8 @@ function ring(score) {
 const section = (label, ...kids) => h('section', {}, h('h3', { class: 'eyebrow mb-2' }, label), ...kids);
 const para = (t) => h('p', { class: 'text-pretty text-[15px] leading-relaxed text-slate-300', text: t });
 
+const tierKey = (w) => (w < 2 ? 'social' : w >= 5 ? 'primary' : w >= 4.5 ? 'wire' : w >= 4 ? 'major' : w >= 3.5 ? 'specialist' : w >= 2.5 ? 'commentary' : 'unclassified');
+
 function sourceItem(s) {
   const href = safeHref(s.url);
   return h(
@@ -394,7 +435,7 @@ function sourceItem(s) {
     { class: 'flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3' },
     h(
       'div',
-      { class: 'w-14 shrink-0 pt-0.5', title: `Source credibility ${s.trust_score} out of 5` },
+      { class: 'w-14 shrink-0 pt-0.5', title: t('srcWeight', { n: s.trust_score }) },
       h('p', { class: 'font-mono text-xs font-semibold text-amber-300', text: s.trust_score.toFixed(1) }),
       (() => {
         const bar = h('div', { class: 'mt-1 h-1 overflow-hidden rounded-full bg-slate-800' }, h('div', { class: 'h-full rounded-full bg-amber-500' }));
@@ -405,7 +446,7 @@ function sourceItem(s) {
     h(
       'div',
       { class: 'min-w-0' },
-      h('p', { class: 'text-sm font-semibold text-slate-100' }, s.name, h('span', { class: 'font-normal text-slate-500', text: ` · ${s.tier}` })),
+      h('p', { class: 'text-sm font-semibold text-slate-100' }, s.name, h('span', { class: 'font-normal text-slate-500', text: ` · ${t(`tier.${tierKey(s.trust_score)}`)}` })),
       href
         ? h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'mt-0.5 block truncate text-sm text-emerald-400 underline-offset-2 hover:underline' }, s.title, ' ↗')
         : h('p', { class: 'mt-0.5 truncate text-sm text-slate-500', text: s.title }),
@@ -413,47 +454,42 @@ function sourceItem(s) {
   );
 }
 
-const BREAKDOWN = [
-  ['credibility', 'Source credibility', 40],
-  ['corroboration', 'Independent sources', 25],
-  ['primaryEvidence', 'Primary evidence', 20],
-  ['claimSupport', 'Claims backed by sources', 15],
-];
+const BREAKDOWN = [['credibility', 40], ['corroboration', 25], ['primaryEvidence', 20], ['claimSupport', 15]];
 
 function breakdownView(a, trust) {
-  if (!trust?.breakdown) return h('p', { class: 'text-sm text-slate-500', text: 'The score breakdown was not recorded for this story.' });
+  if (!trust?.breakdown) return h('p', { class: 'text-sm text-slate-500', text: t('scoreNone') });
   const b = trust.breakdown;
   return h(
     'div',
     { class: 'grid gap-2.5' },
-    ...BREAKDOWN.map(([key, label, max]) => {
+    ...BREAKDOWN.map(([key, max]) => {
       const v = Number(b[key] ?? 0);
       const fill = h('div', { class: 'h-full rounded-full bg-amber-500' });
       fill.style.width = `${Math.max(0, Math.min(100, (v / max) * 100))}%`;
       return h(
         'div',
         { class: 'grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1' },
-        h('span', { class: 'text-sm text-slate-300', text: label }),
+        h('span', { class: 'text-sm text-slate-300', text: t(`bd.${key}`) }),
         h('span', { class: 'font-mono text-xs text-slate-400', text: `${v % 1 ? v.toFixed(1) : v} / ${max}` }),
         h('div', { class: 'col-span-2 h-1.5 overflow-hidden rounded-full bg-slate-800' }, fill),
       );
     }),
-    h('p', { class: 'mt-1 font-mono text-xs text-slate-500', text: `${trust.independentSources ?? '?'} independent source${trust.independentSources === 1 ? '' : 's'} · score ${a.trust_score} / 100` }),
+    h('p', { class: 'mt-1 font-mono text-xs text-slate-500', text: t('scoreFoot', { n: trust.independentSources ?? '?', score: a.trust_score }) }),
   );
 }
 
-const detailCache = new Map();
+const detailCache = new Map(); // `${lang}:${id}` -> detail
 
 function buildPanel(a, id) {
-  const slot = h('div', { class: 'text-sm text-slate-500', text: 'Loading score breakdown…' });
+  const slot = h('div', { class: 'text-sm text-slate-500', text: t('scoreLoading') });
   const panel = h(
     'div',
     { id, hidden: true, class: 'mt-5 grid gap-5 border-t border-slate-800 pt-5' },
-    section('What Happened', para(a.what_happened)),
-    section('Why It Matters', para(a.why_it_matters)),
+    section(t('secWhat'), para(a.what_happened)),
+    section(t('secWhy'), para(a.why_it_matters)),
     a.figures.length
       ? section(
-          'Key Figures & Dates',
+          t('secFigures'),
           h(
             'dl',
             { class: 'grid gap-2 sm:grid-cols-2' },
@@ -464,11 +500,11 @@ function buildPanel(a, id) {
         )
       : null,
     a.affected_entities.length
-      ? section('Affected', h('ul', { class: 'flex flex-wrap gap-1.5' }, ...a.affected_entities.map((e) => h('li', { class: 'rounded-md bg-slate-800/80 px-2 py-1 text-xs text-slate-300', text: e }))))
+      ? section(t('secAffected'), h('ul', { class: 'flex flex-wrap gap-1.5' }, ...a.affected_entities.map((e) => h('li', { class: 'rounded-md bg-slate-800/80 px-2 py-1 text-xs text-slate-300', text: e }))))
       : null,
-    section('Risks & Uncertainty', h('div', { class: 'border-l-2 border-amber-500/70 pl-3' }, para(a.risks_uncertainty))),
-    section('Sources', h('ul', { class: 'grid gap-2' }, ...a.sources.map(sourceItem))),
-    section('How this score was built', slot),
+    section(t('secRisks'), h('div', { class: 'border-l-2 border-amber-500/70 pl-3' }, para(a.risks_uncertainty))),
+    section(t('secSources'), h('ul', { class: 'grid gap-2' }, ...a.sources.map(sourceItem))),
+    section(t('secScore'), slot),
   );
   panel._slot = slot;
   return panel;
@@ -478,11 +514,12 @@ async function fillBreakdown(a, panel) {
   if (panel._filled) return;
   panel._filled = true;
   try {
-    if (!detailCache.has(a.id)) detailCache.set(a.id, await api(`/api/articles/${encodeURIComponent(a.id)}`));
-    panel._slot.replaceWith(breakdownView(a, detailCache.get(a.id).trust));
+    const key = `${state.lang}:${a.id}`;
+    if (!detailCache.has(key)) detailCache.set(key, await api(`/api/articles/${encodeURIComponent(a.id)}?lang=${state.lang}`));
+    panel._slot.replaceWith(breakdownView(a, detailCache.get(key).trust));
   } catch (e) {
     panel._filled = false;
-    panel._slot.textContent = `Couldn't load the breakdown (${e.message}). Close and reopen the briefing to retry.`;
+    panel._slot.textContent = t('scoreFail', { err: e.message });
   }
 }
 
@@ -491,7 +528,7 @@ function card(a, rankMode) {
   const when = tb(a.published_at);
   const rel = ago(a.published_at);
   const panel = buildPanel(a, `${id}-panel`);
-  const label = h('span', { text: 'Read the briefing' });
+  const label = h('span', { text: t('read') });
   const chevron = svg('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: 'transition-transform', 'aria-hidden': 'true' }, svg('path', { d: 'm6 9 6 6 6-6' }));
   const btn = h(
     'button',
@@ -504,7 +541,7 @@ function card(a, rankMode) {
         const open = panel.hidden;
         panel.hidden = !open;
         btn.setAttribute('aria-expanded', String(open));
-        label.textContent = open ? 'Hide the briefing' : 'Read the briefing';
+        label.textContent = open ? t('hide') : t('read');
         chevron.classList.toggle('rotate-180', open);
         if (open) fillBreakdown(a, panel);
       },
@@ -514,7 +551,7 @@ function card(a, rankMode) {
   );
 
   const rank = rankMode
-    ? h('span', { class: `display w-9 shrink-0 pt-0.5 text-right text-4xl font-extrabold leading-none sm:w-11 sm:text-5xl ${a.rank <= 3 ? 'text-amber-500' : 'text-transparent [-webkit-text-stroke:1.5px_var(--color-gold)]'}`, 'aria-label': `Rank ${a.rank}`, text: String(a.rank) })
+    ? h('span', { class: `display w-9 shrink-0 pt-0.5 text-right text-4xl font-extrabold leading-none sm:w-11 sm:text-5xl ${a.rank <= 3 ? 'text-amber-500' : 'text-transparent [-webkit-text-stroke:1.5px_var(--color-gold)]'}`, 'aria-label': t('rank', { n: a.rank }), text: String(a.rank) })
     : null;
 
   const body = h(
@@ -529,8 +566,8 @@ function card(a, rankMode) {
         h(
           'div',
           { class: 'flex flex-wrap items-center gap-1.5' },
-          h('span', { class: 'tag bg-slate-800 text-slate-300', text: a.category }),
-          a.georgia_related ? h('span', { class: 'tag bg-emerald-500/15 text-emerald-300' }, h('span', { class: 'size-1.5 rounded-full bg-emerald-400', 'aria-hidden': 'true' }), 'Georgia') : null,
+          h('span', { class: 'tag bg-slate-800 text-slate-300', text: t(`cat.${a.category}`) }),
+          a.georgia_related ? h('span', { class: 'tag bg-emerald-500/15 text-emerald-300' }, h('span', { class: 'size-1.5 rounded-full bg-emerald-400', 'aria-hidden': 'true' }), t('georgiaTag')) : null,
         ),
         h('h2', { id: `${id}-h`, class: 'display mt-2.5 text-balance text-xl font-bold leading-snug text-white sm:text-2xl', text: a.headline }),
       ),
@@ -540,12 +577,12 @@ function card(a, rankMode) {
     h(
       'p',
       { class: 'mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-xs text-slate-500' },
-      h('time', { datetime: a.published_at, title: `${when.date}, ${when.time} Tbilisi (GMT+4)`, class: 'text-slate-300', text: `${when.time} · ${when.date}` }),
-      h('span', { text: 'Tbilisi' }),
+      h('time', { datetime: a.published_at, title: t('whenTitle', { date: when.date, time: when.time }), class: 'text-slate-300', text: `${when.time} · ${when.date}` }),
+      h('span', { text: t('tbilisi') }),
       rel ? h('span', { text: `· ${rel}` }) : null,
-      h('span', { text: `· ${a.sources.length} source${a.sources.length === 1 ? '' : 's'}` }),
-      a.grammar_checked ? h('span', { class: 'text-emerald-400/80', text: '· ✓ Edited' }) : null,
-      a.fact_checked ? h('span', { class: 'text-emerald-400/80', text: '· ✓ Fact-checked' }) : null,
+      h('span', { text: `· ${plural(t, 'sources', a.sources.length)}` }),
+      a.grammar_checked ? h('span', { class: 'text-emerald-400/80', text: `· ${a.lang === 'ka' ? t('kaChecked') : t('edited')}` }) : null,
+      a.fact_checked ? h('span', { class: 'text-emerald-400/80', text: `· ${t('factChecked')}` }) : null,
     ),
     btn,
     panel,
@@ -569,9 +606,9 @@ function emptyView() {
     h(
       'div',
       { class: 'rounded-2xl border border-dashed border-slate-700 p-8 text-center' },
-      h('p', { class: 'display text-xl font-bold text-white', text: filtered ? 'Nothing published in this slot' : 'No verified stories yet' }),
-      h('p', { class: 'mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-400', text: filtered ? 'Stories appear only after they pass fact-checking, so some slots are quiet. Try a neighbouring slot, another day, or clear the filters.' : 'The pipeline runs every five minutes. New stories show up here as soon as they pass fact-checking.' }),
-      filtered ? h('button', { type: 'button', class: 'btn btn-primary mt-5', onclick: () => $('clear').click() }, 'Clear filters') : null,
+      h('p', { class: 'display text-xl font-bold text-white', text: filtered ? t('emptySlotTitle') : t('emptyTitle') }),
+      h('p', { class: 'mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-400', text: filtered ? t('emptySlotBody') : t('emptyBody') }),
+      filtered ? h('button', { type: 'button', class: 'btn btn-primary mt-5', onclick: () => $('clear').click() }, t('clear')) : null,
     ),
   );
 }
@@ -583,18 +620,18 @@ function errorView() {
     h(
       'div',
       { class: 'rounded-2xl border border-rose-500/40 bg-rose-500/5 p-6 text-center', role: 'alert' },
-      h('p', { class: 'display text-lg font-bold text-white', text: "Couldn't load stories" }),
-      h('p', { class: 'mt-1 text-sm text-slate-400', text: `The server answered: ${state.error}. Check your connection and try again.` }),
-      h('button', { type: 'button', class: 'btn btn-primary mt-4', onclick: () => load({ fresh: true }) }, 'Try again'),
+      h('p', { class: 'display text-lg font-bold text-white', text: t('errTitle') }),
+      h('p', { class: 'mt-1 text-sm text-slate-400', text: t('errBody', { err: state.error }) }),
+      h('button', { type: 'button', class: 'btn btn-primary mt-4', onclick: () => load({ fresh: true }) }, t('retry')),
     ),
   );
 }
 
 function describeFilter() {
-  const t = state.time;
-  const slot = t ? `${t}–${fromMin(toMin(t) + 4)}` : null;
-  if (t && state.date) return `${longDay(state.date)}, ${slot} Tbilisi`;
-  if (t) return `any day, ${slot} Tbilisi`;
+  const from = state.time;
+  const to = from ? fromMin(toMin(from) + 4) : null;
+  if (from && state.date) return t('filterDayTime', { day: longDay(state.date), from, to });
+  if (from) return t('filterAnyDayTime', { from, to });
   if (state.date) return longDay(state.date);
   return null;
 }
@@ -621,10 +658,11 @@ function renderFeed({ append = false } = {}) {
     rendered = state.articles.length;
   }
 
-  const label = state.tabs.find((t) => t.id === state.tab)?.label ?? 'All';
+  const label = t(`tab.${state.tab}`);
   const f = describeFilter();
   const n = state.articles.length;
-  $('result').textContent = state.loading && !append ? 'Loading…' : [top ? 'Top 10 · ranked by trust score' : `${n}${state.nextBefore ? '+' : ''} ${n === 1 ? 'story' : 'stories'} · ${label}`, f].filter(Boolean).join(' · ');
+  const count = plural(t, 'stories', n).replace(String(n), `${n}${state.nextBefore ? '+' : ''}`);
+  $('result').textContent = state.loading && !append ? t('loading') : [top ? t('resultTop') : t('resultCount', { count, tab: label }), f].filter(Boolean).join(' · ');
   $('more').hidden = !state.nextBefore || state.loading;
 }
 
@@ -644,7 +682,7 @@ async function load({ append = false, fresh = false } = {}) {
   syncInputs();
   renderFeed({ append });
 
-  const q = new URLSearchParams({ tab: state.tab, limit: '20' });
+  const q = new URLSearchParams({ tab: state.tab, limit: '20', lang: state.lang });
   if (state.date) q.set('date', state.date);
   if (state.time) q.set('time', state.time);
   if (append && state.nextBefore) q.set('before', state.nextBefore);
@@ -672,8 +710,37 @@ $('newbtn').addEventListener('click', () => {
   scrollTo({ top: 0, behavior: 'smooth' });
 });
 
+// ─── language switch ────────────────────────────────────────────────────────
+function applyStatic() {
+  t = makeT(state.lang);
+  document.documentElement.lang = state.lang;
+  document.title = t('docTitle');
+  document.querySelector('meta[name="description"]')?.setAttribute('content', t('docDesc'));
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  for (const b of document.querySelectorAll('#langs [data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === state.lang));
+}
+
+function setLang(lang) {
+  if (lang === state.lang || !LANGS.includes(lang)) return;
+  state.lang = lang;
+  try {
+    localStorage.setItem('lang', lang);
+  } catch {
+    /* storage can be blocked; the choice just won't persist */
+  }
+  applyStatic();
+  renderTabs();
+  renderLive();
+  renderTape();
+  load({ fresh: true });
+}
+for (const b of document.querySelectorAll('#langs [data-lang]')) b.addEventListener('click', () => setLang(b.dataset.lang));
+
 // ─── boot ───────────────────────────────────────────────────────────────────
 async function boot() {
+  state.lang = pickLang();
+  applyStatic();
   readUrl();
   $('date').max = todayTb();
   renderTabs();

@@ -55,8 +55,25 @@ export function stubFeeds(map: Record<string, string>): void {
 
 type Handler = (input: any) => unknown;
 
+const KA = 'ქართული ტექსტი ';
+const digitsOf = (s: string): string => (s.match(/\d+(?:[.,]\d+)*/g) ?? []).join(' ');
+/** Georgian-looking filler that keeps the source's digits, so it passes the real guards. */
+export const kaText = (src: string): string => `${KA.repeat(Math.max(3, Math.ceil(src.length / 14)))}${digitsOf(src)}`.trim();
+export const kaFigures = (src: string): string =>
+  (src ?? '').split('\n').filter(Boolean).map((l) => `ლეიბლი: ${digitsOf(l) || 'მნიშვნელობა'}`).join('\n');
+const kaArticle = (a: any) => ({
+  id: a.id,
+  headline: kaText(a.headline),
+  summary: kaText(a.summary),
+  what_happened: kaText(a.what_happened),
+  why_it_matters: kaText(a.why_it_matters),
+  figures_dates: kaFigures(a.figures_dates),
+  affected_entities: 'ბაზრები, ინვესტორები',
+  risks_uncertainty: kaText(a.risks_uncertainty),
+});
+
 /** Fake LLM that runs the stage's own zod schema, like the real client. */
-export function fakeLlm(handlers: Partial<Record<'research' | 'edit' | 'fact_check', Handler>> = {}): Llm & { calls: string[] } {
+export function fakeLlm(handlers: Partial<Record<'research' | 'edit' | 'fact_check' | 'translate' | 'ka_grammar', Handler>> = {}): Llm & { calls: string[] } {
   const defaults: Record<string, Handler> = {
     research: (input) => ({
       briefings: input.clusters.map((c: any) => ({
@@ -74,6 +91,8 @@ export function fakeLlm(handlers: Partial<Record<'research' | 'edit' | 'fact_che
       })),
     }),
     edit: (input) => ({ articles: input.articles.map((a: any) => ({ ...a, summary: a.summary.replace(/\s+/g, ' ') })) }),
+    translate: (input) => ({ articles: input.articles.map(kaArticle) }),
+    ka_grammar: (input) => ({ articles: input.articles.map((a: any) => ({ ...a, summary: a.summary.replace(/\s+/g, ' '), corrections: 'Fixed case endings.' })) }),
     fact_check: (input) => ({
       results: input.articles.map((a: any) => ({
         id: a.id,
@@ -99,3 +118,26 @@ export function fakeLlm(handlers: Partial<Record<'research' | 'edit' | 'fact_che
 
 export const rows = <T>(env: Env, sql: string, ...p: unknown[]): T[] =>
   (env.DB as unknown as { raw: { prepare(s: string): { all(...p: unknown[]): unknown[] } } }).raw.prepare(sql).all(...p) as T[];
+
+export function insertTranslation(env: Env, articleId: string, o: Record<string, unknown> = {}): void {
+  const ts = '2026-10-03T10:00:00.000Z';
+  const row = {
+    article_id: articleId,
+    lang: 'ka',
+    headline: 'ქართული სათაური ამ სიახლისთვის',
+    summary: 'ქართული მოკლე შინაარსი, რომელიც საკმარისად გრძელია.',
+    what_happened: 'ქართული ტექსტი იმის შესახებ, თუ რა მოხდა, საკმარისი სიგრძით.',
+    why_it_matters: 'ქართული ტექსტი იმის შესახებ, თუ რატომ არის ეს მნიშვნელოვანი.',
+    figures_dates: null,
+    affected_entities: null,
+    risks_uncertainty: 'ქართული ტექსტი რისკების შესახებ.',
+    grammar_checked: 1,
+    created_at: ts,
+    updated_at: ts,
+    ...o,
+  };
+  const cols = Object.keys(row);
+  (env.DB as unknown as { raw: { prepare(s: string): { run(...p: unknown[]): unknown } } }).raw
+    .prepare(`INSERT INTO article_translations (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
+    .run(...cols.map((c) => (row as Record<string, unknown>)[c]));
+}

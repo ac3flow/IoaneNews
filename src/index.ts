@@ -1,5 +1,5 @@
 import { handleApi } from './api';
-import { runPipeline } from './pipeline/run';
+import { runPipeline, stagesForCron } from './pipeline/run';
 import type { Env } from './types';
 
 export default {
@@ -10,11 +10,14 @@ export default {
     return env.ASSETS.fetch(req);
   },
 
-  // */5 * * * *  ->  Research -> Edit -> Fact-Check -> Publish/Reject
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  // Staged mode: five triggers a minute apart, each running its slice of
+  //   Research -> Edit -> Fact-Check -> Translate (KA) -> Georgian Grammar -> Publish/Reject.
+  // Single mode: one */5 trigger runs all of it. See PIPELINE_MODE in wrangler.jsonc.
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const stages = stagesForCron(env.PIPELINE_MODE, controller.cron);
     ctx.waitUntil(
-      runPipeline(env, { trigger: 'cron' })
-        .then((r) => console.log('pipeline', r.status, JSON.stringify(r.stages)))
+      runPipeline(env, { trigger: 'cron', stages })
+        .then((r) => console.log('pipeline', stages.join('+'), r.status, JSON.stringify(r.stages)))
         .catch((e) => console.error('pipeline FAILED:', e instanceof Error ? e.message : e)),
     );
   },

@@ -48,9 +48,31 @@ CREATE TABLE IF NOT EXISTS feed_items (
 
 CREATE INDEX IF NOT EXISTS idx_feed_items_pool ON feed_items(article_id, published_at DESC);
 
--- One row per pipeline execution (cron or manual). Doubles as the run lock.
+-- Georgian (and any future language) versions of an article. The English text stays in `articles`.
+-- A row is created by the Translator (grammar_checked = 0) and finished by the Georgian Grammar
+-- Checker (grammar_checked = 1). An article is published only once its 'ka' row is finished.
+CREATE TABLE IF NOT EXISTS article_translations (
+    article_id TEXT NOT NULL,
+    lang TEXT NOT NULL,                 -- 'ka'
+    headline TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    what_happened TEXT NOT NULL,
+    why_it_matters TEXT NOT NULL,
+    figures_dates TEXT,
+    affected_entities TEXT,
+    risks_uncertainty TEXT,
+    grammar_checked INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (article_id, lang)
+);
+
+CREATE INDEX IF NOT EXISTS idx_translations_pending ON article_translations(lang, grammar_checked, created_at);
+
+-- One row per pipeline execution (cron or manual). Doubles as the run lock (one live run per scope).
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     run_id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL DEFAULT 'all',  -- which stages this run covers, e.g. 'collect' or 'research+edit'
     trigger TEXT NOT NULL,              -- 'cron' | 'manual'
     started_at TEXT NOT NULL,
     finished_at TEXT,
@@ -66,7 +88,7 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT,
     article_id TEXT,
-    stage TEXT NOT NULL,                -- 'research' | 'edit' | 'fact_check' | 'publish' | 'feed'
+    stage TEXT NOT NULL,                -- 'collect' | 'research' | 'edit' | 'fact_check' | 'translate' | 'ka_grammar' | 'publish' | 'feed'
     outcome TEXT NOT NULL,              -- 'ok' | 'rejected' | 'error' | 'skipped'
     detail TEXT,                        -- JSON
     created_at TEXT NOT NULL
