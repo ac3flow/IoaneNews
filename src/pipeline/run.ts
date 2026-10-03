@@ -14,6 +14,7 @@
 
 import type { Env } from '../types';
 import { nowIso } from '../time';
+import { ensureSchema } from '../db-init';
 import { flushEvents, logEvent, readConfig, type StageCtx } from './context';
 import { editStage } from './editor';
 import { factCheckStage } from './factcheck';
@@ -82,6 +83,8 @@ export async function runPipeline(env: Env, opts: RunOptions): Promise<RunResult
   const started = nowIso(now);
   const stages = opts.stages ?? PIPELINE_ORDER;
   const scope = stages.join('+');
+
+  await ensureSchema(env);
 
   // Lock: insert our row, then yield to any earlier live run with the same scope.
   await env.DB.prepare(`INSERT INTO pipeline_runs (run_id, scope, trigger, started_at, status) VALUES (?1, ?2, ?3, ?4, 'running')`).bind(runId, scope, opts.trigger, started).run();
