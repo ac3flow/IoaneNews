@@ -35,7 +35,7 @@
       "binding": "DB",
       "database_name": "ioane-news",
       // Create it once:  npx wrangler d1 create ioane-news   then paste the id here.
-      "database_id": "PASTE_YOUR_D1_ID_HERE"
+      "database_id": "944aa348-911c-4db4-9182-878f9c801456"
     }
   ],
 
