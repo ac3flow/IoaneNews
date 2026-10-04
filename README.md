@@ -31,6 +31,15 @@ An article drafted at `:01` is published at `:03`. The five expressions in `wran
 
 **CPU on Free.** Parsing feeds is the expensive part. Measured on real feed bodies, parsing costs about 0.34 ms per feed, so a 25-feed collect is roughly 9 ms of parsing before anything else, which is at the edge of Free's limit. If Cloudflare logs `Worker exceeded CPU time limit` (error 1102), lower `FEEDS_PER_RUN` (for example `15`) or move to Workers Paid and `single` mode. The numbers were measured in Node, not on Cloudflare's Free plan, so treat them as a guide.
 
+## Balancing topics
+
+Left alone, the research stage would draft whatever scores highest, and primary sources (central banks, statistics offices, Georgian institutions) always score highest: they need no second source and get a +3 bonus. Topics fed by specialist press (VC & Startups has only specialist sources) lost every slot. Two rules in `src/pipeline/research.ts` fix that:
+
+1. **Fair pool.** The pool of undrafted items is read round-robin across topics (the newest item of every topic first, then the second newest, up to 150), so a chatty topic cannot push the others out of it.
+2. **Fair share (`pickBalanced`).** Each drafting slot goes to the topic with the fewest stories created in the last 24 hours (drafts in flight count, rejected ones do not). Within a topic the strongest cluster goes first. Ties go to the stronger cluster, and a topic with nothing eligible is skipped, so a slot is never left empty. Items from a Georgian source count toward a separate **Georgia** share.
+
+The trust gates are unchanged: a topic that is behind still needs two independent publishers or one primary source. `/api/status`-style detail: the research stage result lists `chosen` (the topic of each drafted cluster). The category prompt also tells the model to use the feed's category hint, and to file funding rounds and startup news under VC & Startups.
+
 ## Georgian
 
 - **Translator** writes each verified English briefing in natural Georgian (Latin brand names stay Latin with a hyphenated ending, as in `Google-მა`).
